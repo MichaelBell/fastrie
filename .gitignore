@@ -1,0 +1,9 @@
+*.o
+*.bak
+*.swp
+*.log
+
+xptMiner/epiphany/bin/
+xptMiner/xptminer
+xptMiner/xptMiner/test
+

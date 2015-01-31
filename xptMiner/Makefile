@@ -4,11 +4,11 @@ CXX = g++
 CC = cc
 CXXFLAGS = -Wall -Wextra -std=c++0x -O3 -fomit-frame-pointer  -g
 
-CFLAGS = -Wall -Wextra -O3 -fomit-frame-pointer  -g
+CFLAGS = -Wall -Wextra -O3 -fomit-frame-pointer  -g -std=gnu99
 
 
 OSVERSION := $(shell uname -s)
-LIBS = -lcrypto -lssl -pthread  -ldl 
+LIBS = -lcrypto -lssl -pthread  -ldl -le-hal
 ifeq ($(INT_LIB),mpir)
        MPIR_DEF=-DUSE_MPIR
        CFLAGS +=$(MPIR_DEF)
@@ -37,8 +37,8 @@ ifeq ($(OSVERSION),FreeBSD)
 endif
 
 # You might need to edit these paths too
-LIBPATHS = -L/usr/local/lib -L/usr/lib -L/DBA/openssl/1.0.1f/lib/
-INCLUDEPATHS = -I/usr/local/include -I/usr/include -IxptMiner/includes/ -IxptMiner/OpenCL
+LIBPATHS = -L/usr/local/lib -L/usr/lib -L/DBA/openssl/1.0.1f/lib/ -L/opt/adapteva/esdk/tools/host/lib
+INCLUDEPATHS = -I/usr/local/include -I/usr/include -IxptMiner/includes/ -Iepiphany/src -I/opt/adapteva/esdk/tools/host/include
 
 ifeq ($(OSVERSION),Darwin)
 	EXTENSION = -mac
@@ -64,6 +64,7 @@ OBJS = \
 	xptMiner/xptServer.o \
 	xptMiner/xptServerPacketHandler.o \
 	xptMiner/transaction.o \
+	xptMiner/rh_riecoin.o \
 	xptMiner/riecoinMiner.o
 
 

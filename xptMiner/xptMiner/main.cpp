@@ -7,7 +7,7 @@
 #define MAX_TRANSACTIONS	(4096)
 
 // miner version string (for pool statistic)
-char* minerVersionString = "xptMiner 1.7dga-b15";
+char* minerVersionString = "xptMiner 1.7rh-epip1";
 
 minerSettings_t minerSettings = {0};
 
@@ -255,11 +255,13 @@ void xptMiner_xptQueryWorkLoop()
 	xptClient = xptMiner_initateNewXptConnectionObject();
 	uint32 timerPrintDetails = getTimeMilliseconds() + 8000;
 
-	if(minerSettings.requestTarget.donationPercent > 0.1f)
-	{
-	  float donAmount = minerSettings.requestTarget.donationPercent;
-	  xptClient_addDeveloperFeeEntry(xptClient, "RUhMA8bvsr48aC3WVj3aGf5p1zytPSz59o", getFeeFromDouble(donAmount), false);  // dga
-	}
+
+       if(minerSettings.requestTarget.donationPercent > 0.1f)
+       {
+         float donAmount = minerSettings.requestTarget.donationPercent;
+         xptClient_addDeveloperFeeEntry(xptClient, "RHbXSQk2wUeNAPYxTTqjYz5hj9k1cL7Qo7", getFeeFromDouble(donAmount), false);  // rockhawk
+       }
+
 	while( true )
 	{
 		uint32 currentTick = getTimeMilliseconds();
@@ -348,11 +350,12 @@ void xptMiner_xptQueryWorkLoop()
 	{
 	  float donAmount = minerSettings.requestTarget.donationPercent;
 	  if (donAmount > 1.5) { 
-	    donAmount -= 0.25f;
-	    xptClient_addDeveloperFeeEntry(xptClient, "RDrQYV7VHbnzUDX8BmcjoradKGVQaBcXXi", getFeeFromDouble(0.10f), false);  // jh00
-	    xptClient_addDeveloperFeeEntry(xptClient, "RNh5PSLpPmkNxB3PgoLnKzpM75rmkzfz5y", getFeeFromDouble(0.15f), false);  // clintar, windows port
+	    donAmount -= 0.4f;
+	    xptClient_addDeveloperFeeEntry(xptClient, "RDrQYV7VHbnzUDX8BmcjoradKGVQaBcXXi", getFeeFromDouble(0.15f), false);  // jh00, xpt client for Windows
+	    xptClient_addDeveloperFeeEntry(xptClient, "RNh5PSLpPmkNxB3PgoLnKzpM75rmkzfz5y", getFeeFromDouble(0.10f), false);  // clintar, unix port
+	    xptClient_addDeveloperFeeEntry(xptClient, "RUhMA8bvsr48aC3WVj3aGf5p1zytPSz59o", getFeeFromDouble(0.15f), false);  // dga, riecoin core interface and ideas
 	  }
-	  xptClient_addDeveloperFeeEntry(xptClient, "RUhMA8bvsr48aC3WVj3aGf5p1zytPSz59o", getFeeFromDouble(donAmount), false);  // dga
+          xptClient_addDeveloperFeeEntry(xptClient, "RHbXSQk2wUeNAPYxTTqjYz5hj9k1cL7Qo7", getFeeFromDouble(donAmount), false);  // rockhawk, epiphany port
 	}
 			if( xptClient_connect(xptClient, &minerSettings.requestTarget) == false )
 			{
@@ -551,8 +554,8 @@ sysctl(mib, 2, &numcpu, &len, NULL, 0);
 #endif
 
 	commandlineInput.numThreads = numcpu;
-	commandlineInput.numThreads = std::min(std::max(commandlineInput.numThreads, 1), 4);
 	xptMiner_parseCommandline(argc, argv);
+	commandlineInput.numThreads = 0;
 	minerSettings.useGPU = commandlineInput.useGPU;
 	printf("----------------------------\n");
 	printf("  xptMiner/ric/dga (%s)\n", minerVersionString);

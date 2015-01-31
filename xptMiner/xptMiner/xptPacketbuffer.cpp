@@ -66,6 +66,7 @@ uint32 xptPacketbuffer_getReadSize(xptPacketbuffer_t* pb)
  * Reads a single float from the packet
  * Returns 0 on error
  */
+#if 0
 float xptPacketbuffer_readFloat(xptPacketbuffer_t* pb, bool* error)
 {
 	if( (pb->parserIndex+4) > pb->bufferSize )
@@ -79,6 +80,7 @@ float xptPacketbuffer_readFloat(xptPacketbuffer_t* pb, bool* error)
 	*error = false;
 	return v;
 }
+#endif
 
 /*
  * Reads a single uint64 from the packet

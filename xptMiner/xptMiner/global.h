@@ -99,8 +99,6 @@ typedef struct sockaddr SOCKADDR;
 
 #include"jhlib.h" // slim version of jh library
 
-#include"openCL.h"
-
 // connection info for xpt
 typedef struct  
 {
