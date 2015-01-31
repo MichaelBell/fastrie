@@ -631,10 +631,10 @@ int main()
       cn = inbuf.nn;
 
       if (my_fermat_test(c, cn)) primes++;
+      if (primes < 1) continue;
 
       mpn_add_1_inplace(c, cn, 4);
       if (my_fermat_test(c, cn)) primes++;
-      if (primes < 1) continue;
 
       mpn_add_1_inplace(c, cn, 2);
       if (my_fermat_test(c, cn)) primes++;

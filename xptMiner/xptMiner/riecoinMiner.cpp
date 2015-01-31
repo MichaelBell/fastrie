@@ -13,7 +13,6 @@
 #endif
 
 minerRiecoinBlock_t* verify_block;
-time_t start_time;
 mpz_t z_target;
 
 CRITICAL_SECTION success_lock;
@@ -31,7 +30,7 @@ unsigned checkRestart()
 void reportSuccess(mpz_t candidate, unsigned nPrimes)
 {
   EnterCriticalSection(&success_lock);
-  DPRINTF("Success %c %d\n", (nPrimes & 0x10) ? 'E' : 'A', nPrimes&0xf);
+  //DPRINTF("Success %c %d\n", (nPrimes & 0x10) ? 'E' : 'A', nPrimes&0xf);
   nPrimes &= 0xf;
 #if 0
   mpz_t testpow, testres, three;
@@ -123,8 +122,6 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	uint32 searchBits = block->targetCompact;
 	verify_block = block;
 
-	start_time = time(NULL);
-
 	// test data
 	// getblock 16ee31c116b75d0299dc03cab2b6cbcb885aa29adf292b2697625bc9d28b2b64
 	//debug_parseHexStringLE("c59ba5357285de73b878fed43039a37f85887c8960e66bcb6e86bdad565924bd", 64, block->merkleRoot);
@@ -154,7 +151,7 @@ void riecoin_process(minerRiecoinBlock_t* block)
 			z_target->_mp_d[0]++;
 	}
 	unsigned int trailingZeros = searchBits - 1 - zeroesBeforeHashInPrime - 256;
-  DPRINTF("Process Entry %x %d\n", z_target->_mp_d[0], trailingZeros);
+  DPRINTF("Process Entry %lx %d\n", z_target->_mp_d[0], trailingZeros);
 	mpz_mul_2exp(z_target, z_target, trailingZeros);
 
 	rh_search(z_target);

@@ -2,9 +2,9 @@
 #INT_LIB=mpir
 CXX = g++
 CC = cc
-CXXFLAGS = -Wall -Wextra -std=c++0x -O3 -fomit-frame-pointer  -g
+CXXFLAGS = -Wall -Wextra -std=c++0x -O3 -fomit-frame-pointer  -g 
 
-CFLAGS = -Wall -Wextra -O3 -fomit-frame-pointer  -g -std=gnu99
+CFLAGS = -Wall -Wextra -O3 -fomit-frame-pointer  -g -std=gnu99 
 
 
 OSVERSION := $(shell uname -s)
@@ -19,7 +19,7 @@ else
 endif
 ifeq ($(OSVERSION),Linux)
 	LIBS += -lrt
-	ARCHFLAGS = -march=native
+	ARCHFLAGS = -marm -march=armv7-a -mfpu=neon -mtune=cortex-a9
 #	ARCHFLAGS = -march=corei7-avx
 #	ARCHFLAGS = -march=corei7 -mno-avx
 endif

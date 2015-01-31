@@ -39,7 +39,7 @@
 //#define PRIME_TABLE_SIZE 9108221  // Not including 2.
 //#define LOW_PRIME_IDX    2506
 //#define SIEVE_SIZE       (MAX_SIEVE_PRIME+(2400000-(MAX_SIEVE_PRIME%2400000)))
-#define SIEVE_SIZE       (4*2400000)
+#define SIEVE_SIZE       (8*2400000)
 #define OFFSETS_SIZE     ((SIEVE_SIZE>>3) < PRIME_TABLE_SIZE ? (SIEVE_SIZE>>3) : PRIME_TABLE_SIZE)
 
 static unsigned int *primeTable;
@@ -72,9 +72,12 @@ static e_mem_t epip_mem;
 #define EPIP_PTEST_IN_OFFSET(CORE)  EPIP_OFFSET(CORE)
 #define EPIP_PTEST_OUT_OFFSET(CORE) (EPIP_OFFSET(CORE) + sizeof(ptest_indata_t))
 
-reportSuccess_t reportSuccess;
-checkRestart_t checkRestart;
-volatile unsigned cancelEverything;
+static reportSuccess_t reportSuccess;
+static checkRestart_t checkRestart;
+static volatile unsigned cancelEverything;
+static pthread_t test_tid[2];
+static unsigned section0 = 0; // Section for thread 0
+static unsigned section1 = 1; // Section for thread 1
 
 // return t such that at = 1 mod m
 // a, m < 2^31.
@@ -261,6 +264,8 @@ static int epip_waitfor(unsigned row, unsigned col)
   return sleeps;
 }
 
+static void* testThread(void* sectionPtr);
+
 static void* lowSieve(void* void_maxj)
 {
   volatile unsigned* maxjptr = void_maxj;
@@ -292,6 +297,11 @@ static void* lowSieve(void* void_maxj)
     while (primeTable[maxj-1] > SIEVE_SIZE) --maxj;
     //fprintf(stderr, "Low sieved to %d (%d)\n", minj, primeTable[minj]);
   }
+
+  // Start the testers immediately, even though epip hasn't finished sieving.
+  pthread_create(&test_tid[0], NULL, testThread, &section0);
+  pthread_create(&test_tid[1], NULL, testThread, &section1);
+
   return NULL;
 }
 
@@ -360,7 +370,7 @@ static void initSieve()
   pthread_t lowsievethread;
   pthread_create(&lowsievethread, NULL, lowSieve, &j);
 
-  unsigned pbase = 22401;
+  unsigned pbase = primeTable[j] - (primeTable[j] & 0x3e);
   while (pbase + (MODP_E_SIEVE_SIZE<<(1+4)) < MAX_SIEVE_PRIME)
   {
     unsigned corej[17];
@@ -534,12 +544,12 @@ static void* testThread(void* sectionPtr)
         mpz_sub_ui(testpow, candidate, 1);
         mpz_powm(testres, two, testpow, candidate);
         if (mpz_cmp_ui(testres, 1) == 0) primes++;
+        if (primes < 1) continue;
 
         mpz_add_ui(testpow, testpow, 4);
         mpz_add_ui(candidate, candidate, 4);
         mpz_powm(testres, two, testpow, candidate);
         if (mpz_cmp_ui(testres, 1) == 0) primes++;
-        if (primes < 1) continue;
 
         mpz_add_ui(testpow, testpow, 2);
         mpz_add_ui(candidate, candidate, 2);
@@ -566,6 +576,7 @@ static void* testThread(void* sectionPtr)
         reportSuccess(candidate, primes);
       }
     }
+  printf("Test thread complete\n");
   mpz_clear(candidate);
   mpz_clear(testpow);
   mpz_clear(testres);
@@ -573,21 +584,24 @@ static void* testThread(void* sectionPtr)
   return NULL;
 }
 
-static void epipReadTestResults(unsigned numCores)
+static unsigned epipReadTestResults(unsigned numCores)
 {
   mpz_t candidate;
   mpz_init(candidate);
   ptest_outdata_t ptest_outbuf;
+  unsigned totalSleeps = 0;
+  int sleeps;
 
   //printf("Reading results\n");
   for (unsigned core = 0; core < numCores; ++core)
   {
     //fprintf(stderr, ".");
-    if (epip_waitfor(core>>2, core&3) < 0) 
+    if ((sleeps = epip_waitfor(core>>2, core&3)) < 0) 
     {
       printf("Ignoring stuck core %d\n", core);
       continue;
     }
+    totalSleeps += sleeps;
     if (e_read(&epip_mem, 0, 0, EPIP_PTEST_OUT_OFFSET(core), &ptest_outbuf, sizeof(ptest_outdata_t)) != sizeof(ptest_outdata_t)) printf("Read error on core %d\n", core);
 
     for (unsigned i = 0; i < ptest_outbuf.num_results; ++i)
@@ -606,9 +620,10 @@ static void epipReadTestResults(unsigned numCores)
     } 
   }  
   mpz_clear(candidate);
+  return totalSleeps;
 }
 
-static void epipTester(pthread_t test_tid[2])
+static void epipTester()
 {
   //printf("Load epiphany with primetest program\n");
   e_load_group(EPIP_SREC_DIR "e_primetest.srec", &epip_dev, 0, 0, epip_platform.rows, epip_platform.cols, E_FALSE);
@@ -679,11 +694,6 @@ void rh_search(mpz_t target)
   clock_gettime(CLOCK_MONOTONIC, &tv);
   start = tv.tv_sec + (tv.tv_nsec / 1000000000.0);
 
-  pthread_t test_tid[2];
-  unsigned section0 = 0;
-  unsigned section1 = 1;
-  pthread_create(&test_tid[0], NULL, testThread, &section0);
-  pthread_create(&test_tid[1], NULL, testThread, &section1);
   epipTester(test_tid);
 
   clock_gettime(CLOCK_MONOTONIC, &tv);
