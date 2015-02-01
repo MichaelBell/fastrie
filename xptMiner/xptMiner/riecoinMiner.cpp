@@ -32,7 +32,7 @@ void reportSuccess(mpz_t candidate, unsigned nPrimes)
   EnterCriticalSection(&success_lock);
   DPRINTF("Success %c %d\n", (nPrimes & 0x10) ? 'E' : 'A', nPrimes&0xf);
   nPrimes &= 0xf;
-#if 1
+#if 0
   mpz_t testpow, testres, three;
   mpz_init(testpow);
   mpz_init(testres);

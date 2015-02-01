@@ -76,8 +76,9 @@ static reportSuccess_t reportSuccess;
 static checkRestart_t checkRestart;
 static volatile unsigned cancelEverything;
 static pthread_t test_tid[2];
-static unsigned section0 = 0; // Section for thread 0
-static unsigned section1 = 1; // Section for thread 1
+
+#define SIEVE_BLOCK_SIZE 240000
+static volatile unsigned nextSieveIdx;
 
 // return t such that at = 1 mod m
 // a, m < 2^31.
@@ -264,7 +265,7 @@ static int epip_waitfor(unsigned row, unsigned col)
   return sleeps;
 }
 
-static void* testThread(void* sectionPtr);
+static void* testThread(void*);
 
 static void* lowSieve(void* void_maxj)
 {
@@ -298,9 +299,8 @@ static void* lowSieve(void* void_maxj)
     //fprintf(stderr, "Low sieved to %d (%d)\n", minj, primeTable[minj]);
   }
 
-  // Start the testers immediately, even though epip hasn't finished sieving.
-  pthread_create(&test_tid[0], NULL, testThread, &section0);
-  pthread_create(&test_tid[1], NULL, testThread, &section1);
+  // Start one tester immediately, even though epip hasn't finished sieving.
+  pthread_create(&test_tid[0], NULL, testThread, NULL);
 
   return NULL;
 }
@@ -319,6 +319,7 @@ static void initSieve()
 
   memset(sieve, 0, SIEVE_SIZE>>3);
   memset(sieveHighPrime, 0, SIEVE_SIZE>>3);
+  nextSieveIdx = 0;
 
   mpz_fdiv_r(xPlus16057, base, primorial);     // Actually b mod q#
   mpz_sub(xPlus16057, primorial, xPlus16057);  // Now x
@@ -513,7 +514,7 @@ static void initSieve()
   printf("Sieved in %.3f\n", end - start);
 }
 
-static void* testThread(void* sectionPtr)
+static void* testThread(__attribute__ ((unused)) void* unused)
 {
   mpz_t candidate, testpow, testres, two;
   mpz_init(candidate);
@@ -521,10 +522,13 @@ static void* testThread(void* sectionPtr)
   mpz_init(testres);
   mpz_init_set_ui(two, 2);
 
-  unsigned section = *(unsigned*)sectionPtr;
-  unsigned i;
-  unsigned n = 0;
-    for (i = section*(SIEVE_SIZE>>2); i < (section+1)*(SIEVE_SIZE>>2); ++i)
+  while (1)
+  {
+    unsigned section = __atomic_fetch_add(&nextSieveIdx, SIEVE_BLOCK_SIZE, __ATOMIC_RELAXED);
+    if (section >= SIEVE_SIZE) break;
+    //printf("A: Start %d\n", section);
+
+    for (unsigned i = section; i < section + SIEVE_BLOCK_SIZE; ++i)
     {
       if ((i & 0xff) == 0)
       {
@@ -537,7 +541,7 @@ static void* testThread(void* sectionPtr)
       {
         unsigned primes = 0;
 
-        mpz_mul_ui(candidate, primorial, i+n);
+        mpz_mul_ui(candidate, primorial, i);
         mpz_add(candidate, candidate, xPlus16057);
               
         //gmp_printf("Candidate: %Zd\n", candidate);
@@ -576,6 +580,7 @@ static void* testThread(void* sectionPtr)
         reportSuccess(candidate, primes);
       }
     }
+  }
   printf("Test thread complete\n");
   mpz_clear(candidate);
   mpz_clear(testpow);
@@ -639,30 +644,36 @@ static void epipTester()
 
   unsigned core = 0;
 
-  unsigned section = 2;
-  for (unsigned i = section*(SIEVE_SIZE>>2); i < SIEVE_SIZE; ++i)
+  while (1)
   {
-    if (((sieve[i>>5] & (1<<(i&0x1f))) == 0) &&
-        ((sieveHighPrime[i>>5] & (1<<(i&0x1f))) == 0))
+    unsigned section = __atomic_fetch_add(&nextSieveIdx, SIEVE_BLOCK_SIZE, __ATOMIC_RELAXED);
+    if (section >= SIEVE_SIZE) break;
+    //printf("E: Start %d\n", section);
+
+    for (unsigned i = section; i < section + SIEVE_BLOCK_SIZE; ++i)
     {
-      inbuf[core].k[inbuf[core].num_candidates++] = i;
-      if (inbuf[core].num_candidates == PTEST_NUM_CANDIDATES)
+      if (((sieve[i>>5] & (1<<(i&0x1f))) == 0) &&
+          ((sieveHighPrime[i>>5] & (1<<(i&0x1f))) == 0))
       {
-        //printf("Start core %d\n", core);
-        e_write(&epip_mem, 0, 0, EPIP_PTEST_IN_OFFSET(core), &inbuf[core], sizeof(ptest_indata_t));
-        e_start(&epip_dev, core>>2, core&3);
-        if (core == 15)
+        inbuf[core].k[inbuf[core].num_candidates++] = i;
+        if (inbuf[core].num_candidates == PTEST_NUM_CANDIDATES)
         {
-          epipReadTestResults(16);
-          if (checkRestart())
+          //printf("Start core %d\n", core);
+          e_write(&epip_mem, 0, 0, EPIP_PTEST_IN_OFFSET(core), &inbuf[core], sizeof(ptest_indata_t));
+          e_start(&epip_dev, core>>2, core&3);
+          if (core == 15)
           {
-            cancelEverything = 1;
-            break;
+            epipReadTestResults(16);
+            if (checkRestart())
+            {
+              cancelEverything = 1;
+              break;
+            }
           }
+          inbuf[core].num_candidates = 0;
         }
-        inbuf[core].num_candidates = 0;
+        core = (core + 1) & 0xf;
       }
-      core = (core + 1) & 0xf;
     }
   }
 
@@ -687,13 +698,19 @@ void rh_search(mpz_t target)
   mpz_set(base, target);
  
   initSieve();
-  if (checkRestart()) return;
+  if (checkRestart())
+  {
+    pthread_join(test_tid[0], NULL);
+    return;
+  }
 
   struct timespec tv;
   double start, end;
   clock_gettime(CLOCK_MONOTONIC, &tv);
   start = tv.tv_sec + (tv.tv_nsec / 1000000000.0);
 
+  // First thread was kicked off already.
+  pthread_create(&test_tid[1], NULL, testThread, NULL);
   epipTester(test_tid);
 
   clock_gettime(CLOCK_MONOTONIC, &tv);
