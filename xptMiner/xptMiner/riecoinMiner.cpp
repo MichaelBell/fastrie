@@ -30,9 +30,9 @@ unsigned checkRestart()
 void reportSuccess(mpz_t candidate, unsigned nPrimes)
 {
   EnterCriticalSection(&success_lock);
-  //DPRINTF("Success %c %d\n", (nPrimes & 0x10) ? 'E' : 'A', nPrimes&0xf);
+  DPRINTF("Success %c %d\n", (nPrimes & 0x10) ? 'E' : 'A', nPrimes&0xf);
   nPrimes &= 0xf;
-#if 0
+#if 1
   mpz_t testpow, testres, three;
   mpz_init(testpow);
   mpz_init(testres);
@@ -73,7 +73,7 @@ void reportSuccess(mpz_t candidate, unsigned nPrimes)
   mpz_clear(three);
 
   DPRINTF("Verified: %d, reported: %d\n", nPrimes, vPrimes);
-  if (vPrimes != nPrimes)
+  if (vPrimes < nPrimes)
   {
     DPRINTF("ERROR!!\n");
     LeaveCriticalSection(&success_lock);

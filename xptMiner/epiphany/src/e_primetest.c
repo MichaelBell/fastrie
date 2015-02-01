@@ -28,6 +28,48 @@ mp_limb_t primorial[Q_LEN] = { 3990313926u, 1301064672u, 203676164u, 3309914335u
 #define GMP_HLIMB_BIT ((mp_limb_t) 1 << (GMP_LIMB_BITS / 2))
 #define GMP_LLIMB_MASK (GMP_HLIMB_BIT - 1)
 
+#undef MPN_REDC_1
+#define MPN_REDC_1(rp, up, mp, n, invm)                                 \
+  do {                                                                  \
+    mp_limb_t cy;                                                       \
+    cy = mpn_redc_1 (rp, up, mp, n, invm);                              \
+    if (cy != 0)                                                        \
+      mpn_sub_n (rp, rp, mp, n);                                        \
+  } while (0)
+
+const unsigned char  binvert_limb_table[128] = {
+  0x01, 0xAB, 0xCD, 0xB7, 0x39, 0xA3, 0xC5, 0xEF,
+  0xF1, 0x1B, 0x3D, 0xA7, 0x29, 0x13, 0x35, 0xDF,
+  0xE1, 0x8B, 0xAD, 0x97, 0x19, 0x83, 0xA5, 0xCF,
+  0xD1, 0xFB, 0x1D, 0x87, 0x09, 0xF3, 0x15, 0xBF,
+  0xC1, 0x6B, 0x8D, 0x77, 0xF9, 0x63, 0x85, 0xAF,
+  0xB1, 0xDB, 0xFD, 0x67, 0xE9, 0xD3, 0xF5, 0x9F,
+  0xA1, 0x4B, 0x6D, 0x57, 0xD9, 0x43, 0x65, 0x8F,
+  0x91, 0xBB, 0xDD, 0x47, 0xC9, 0xB3, 0xD5, 0x7F,
+  0x81, 0x2B, 0x4D, 0x37, 0xB9, 0x23, 0x45, 0x6F,
+  0x71, 0x9B, 0xBD, 0x27, 0xA9, 0x93, 0xB5, 0x5F,
+  0x61, 0x0B, 0x2D, 0x17, 0x99, 0x03, 0x25, 0x4F,
+  0x51, 0x7B, 0x9D, 0x07, 0x89, 0x73, 0x95, 0x3F,
+  0x41, 0xEB, 0x0D, 0xF7, 0x79, 0xE3, 0x05, 0x2F,
+  0x31, 0x5B, 0x7D, 0xE7, 0x69, 0x53, 0x75, 0x1F,
+  0x21, 0xCB, 0xED, 0xD7, 0x59, 0xC3, 0xE5, 0x0F,
+  0x11, 0x3B, 0x5D, 0xC7, 0x49, 0x33, 0x55, 0xFF
+};
+
+#define binvert_limb(inv,n)                                             \
+  do {                                                                  \
+    mp_limb_t  __n = (n);                                               \
+    mp_limb_t  __inv;                                                   \
+    assert ((__n & 1) == 1);                                            \
+                                                                        \
+    __inv = binvert_limb_table[(__n/2) & 0x7F]; /*  8 */                \
+    __inv = 2 * __inv - __inv * __inv * __n;                            \
+    __inv = 2 * __inv - __inv * __inv * __n;                            \
+                                                                        \
+    assert ((__inv * __n) == 1);                                        \
+    (inv) = __inv;                                                      \
+  } while (0)
+
 #define gmp_clz(count, x) do {                                          \
     unsigned __clz_x = (x);                                             \
     union {unsigned asInt; float asFloat;} _u;                          \
@@ -133,6 +175,24 @@ mpn_sub_1 (mp_ptr rp, mp_srcptr ap, mp_size_t n, mp_limb_t b)
   while (++i < n);
 
   return b;
+}
+
+static mp_limb_t
+mpn_sub_n (mp_ptr rp, mp_srcptr ap, mp_srcptr bp, mp_size_t n)
+{
+  mp_size_t i;
+  mp_limb_t cy;
+
+  for (i = 0, cy = 0; i < n; i++)
+    {
+      mp_limb_t a, b;
+      a = ap[i]; b = bp[i];
+      b += cy;
+      cy = (b < cy);
+      cy += (a < b);
+      rp[i] = a - b;
+    }
+  return cy;
 }
 
 static mp_limb_t
@@ -401,6 +461,25 @@ mpn_mul (mp_ptr rp, mp_srcptr up, mp_size_t un, mp_srcptr vp, mp_size_t vn)
   return rp[un - 1];
 }
 
+static mp_limb_t
+mpn_redc_1 (mp_ptr rp, mp_ptr up, mp_srcptr mp, mp_size_t n, mp_limb_t invm)
+{
+  mp_size_t j;
+  mp_limb_t cy;
+
+  assert (n > 0);
+
+  for (j = n - 1; j >= 0; j--)
+    {
+      cy = mpn_addmul_1 (up, mp, n, up[0] * invm);
+      assert (up[0] == 0);
+      up[0] = cy;
+      up++;
+    }
+
+  cy = mpn_add_n (rp, up, up - n, n);
+  return cy;
+}
 
 static void
 mpn_div_r_pi1 (mp_ptr np, mp_size_t nn, mp_limb_t n1,
@@ -519,35 +598,32 @@ mpn_lshift (mp_ptr rp, mp_srcptr up, mp_size_t n, unsigned int cnt)
 static int
 my_fermat_test (const mp_srcptr msp, mp_size_t mn)
 {
-  mp_fixed_len_num t2, ep;
-  mp_double_fixed_len_num r, t;
+  mp_fixed_len_num r, ep;
+  mp_double_fixed_len_num t;
   mp_ptr mp, tp, rp;
-  mp_size_t en, tn, rn;
+  mp_size_t en;
+  mp_size_t ebi;
   struct gmp_div_inverse minv;
-  unsigned shift;
+  unsigned i;
 
   mp = msp;
   en = mn;
   mpn_sub_1(ep, mp, mn, 1);
-  
+  //gmp_clz(ebi, ep[en-1]);
+  //ebi += 32 * (en-1);
+  mp_limb_t mi;
+  binvert_limb(mi, mp[0]);
+  mi = -mi;
+
+  // REDCify: t = B^n * 2 % M
   mpn_div_qr_invert (&minv, mp, mn);
-  shift = minv.shift;
+  
+  for (i = 0; i < mn; ++i) r[i] = 0;
+  r[mn] = 1;
+  mpn_div_r_preinv_ns(r, mn+1, mp, mn, &minv);
 
-  if (shift > 0)
-    {
-      /* To avoid shifts, we do all our reductions, except the final
-         one, using a *normalized* m. */
-      minv.shift = 0;
-
-      if (mpn_lshift (t2, mp, mn, shift) != 0) return -1;
-      mp = t2;
-    }
-
-  t[0] = 1;
-	tn = 1;
-	
-	tp = t;
-	rp = r;
+  tp = t;
+  rp = r;
 
   while (en-- > 0)
     {
@@ -557,39 +633,35 @@ my_fermat_test (const mp_srcptr msp, mp_size_t mn)
       bit = GMP_LIMB_HIGHBIT;
       do
         {
-					rn = (tn<<1) - (mpn_mul (rp, tp, tn, tp, tn) == 0);
-          if (rn > mn)
-            {
-              mpn_div_r_preinv_ns (rp, rn, mp, mn, &minv);
-              rn = mpn_normalized_size (rp, mn);
-            }
+          mpn_mul (tp, rp, mn, rp, mn);
+          MPN_REDC_1(rp, tp, mp, mn, mi);
           if (w & bit)
-					{
-					  mp_limb_t carry = mpn_lshift (rp, rp, rn, 1);
+          {
+            mp_limb_t carry = mpn_lshift (rp, rp, mn, 1);
             if (carry)
             {
-              rp[rn] = carry;
-              rn++;
+              mpn_sub_n(rp, rp, mp, mn);
             } 
-					}
-
-					mp_ptr tmp = tp;
-					tp = rp;
-					rp = tmp;
-					tn = rn;
+          }
           bit >>= 1;
         }
       while (bit > 0);
     }
 
-  if (tn < mn) return (tn == 1) && (tp[0] == 1);
+  // DeREDCify
+  for (i = 0; i < mn; ++i) t[i] = r[i];
+  for (; i < mn*2; ++i) t[i] = 0;
+  MPN_REDC_1(rp, tp, mp, mn, mi);
 
-  mp_limb_t th = 0;
-  if (shift) 
-    th = mpn_lshift(tp, tp, tn, shift);
-  mpn_div_r_pi1(tp, tn, th, mp, mn, minv.di);
+  if (rp[mn-1] != 0)
+  {
+    mpn_sub_1(tp, rp, mn, 1);
+    for (i = 0; i < mn; ++i) if (tp[i] != mp[i]) return 0;
+    return 1;
+  }
 
-	return (mpn_normalized_size(tp, mn) == 1) && (tp[0] == (1<<shift));
+  for (i = 1; i < mn-1; ++i) if (rp[i] != 0) return 0;
+  return rp[0] == 1;
 }
 
 void null_isr(int);
