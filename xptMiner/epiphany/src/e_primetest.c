@@ -391,11 +391,14 @@ static mp_limb_t
 mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 {
   mp_limb_t ul, cl, hpl, lpl, rl;
+  mp_limb_t ul2, cl2, hpl2, lpl2, rl2;
+  mp_ptr up2, rp2;
+  mp_size_t halfn = n>>1;
 
   assert (n >= 1);
 
   cl = 0;
-  do
+  if (n & 1)
     {
       ul = *up++;
       gmp_umul_ppmm (hpl, lpl, ul, vl);
@@ -407,10 +410,42 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
       lpl = rl + lpl;
       cl += lpl < rl;
       *rp++ = lpl;
-    }
-  while (--n != 0);
 
-  return cl;
+      n--;
+    }
+
+  up2 = up + (n>>1);
+  rp2 = rp + (n>>1);
+  cl2 = 0;
+
+  do
+    {
+      ul = *up++;
+      gmp_umul_ppmm (hpl, lpl, ul, vl);
+        ul2 = *up2++;
+        gmp_umul_ppmm (hpl2, lpl2, ul2, vl);
+
+      lpl += cl;
+      cl = (lpl < cl) + hpl;
+        lpl2 += cl2;
+        cl2 = (lpl2 < cl2) + hpl2;
+
+      rl = *rp;
+      lpl = rl + lpl;
+        rl2 = *rp2;
+        lpl2 = rl2 + lpl2;
+      cl += lpl < rl;
+      *rp++ = lpl;
+        cl2 += lpl2 < rl2;
+        *rp2++ = lpl2;
+
+      n -= 2;
+    }
+  while (n != 0);
+
+  cl2 += mpn_add_1_inplace(rp, halfn, cl);
+
+  return cl2;
 }
 
 static mp_limb_t
