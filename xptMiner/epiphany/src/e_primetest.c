@@ -418,7 +418,7 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
   rp2 = rp + (n>>1);
   cl2 = 0;
 
-  do
+  while (n != 0)
     {
       ul = *up++;
       gmp_umul_ppmm (hpl, lpl, ul, vl);
@@ -441,7 +441,6 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 
       n -= 2;
     }
-  while (n != 0);
 
   cl2 += mpn_add_1_inplace(rp, halfn, cl);
 
@@ -474,6 +473,7 @@ mpn_submul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
   return cl;
 }
 
+#if 0
 static mp_limb_t
 mpn_mul (mp_ptr rp, mp_srcptr up, mp_size_t un, mp_srcptr vp, mp_size_t vn)
 {
@@ -497,6 +497,7 @@ mpn_mul (mp_ptr rp, mp_srcptr up, mp_size_t un, mp_srcptr vp, mp_size_t vn)
     }
   return rp[un - 1];
 }
+#endif
 
 static mp_limb_t
 mpn_redc_1 (mp_ptr rp, mp_ptr up, mp_srcptr mp, mp_size_t n, mp_limb_t invm)
@@ -659,6 +660,43 @@ mpn_rshift (mp_ptr rp, mp_srcptr up, mp_size_t n, unsigned int cnt)
   return retval;
 }
 
+static void
+mpn_sqr (mp_ptr rp, mp_srcptr up, mp_size_t n)
+{
+  mp_size_t i;
+  {
+    mp_limb_t ul, lpl;
+    ul = up[0];
+    gmp_umul_ppmm (rp[1], lpl, ul, ul);
+    rp[0] = lpl;
+  }
+  if (n > 1)
+    {
+      mp_double_fixed_len_num tp;
+      mp_limb_t cy;
+
+      cy = mpn_mul_1 (tp, up + 1, n - 1, up[0]);
+      tp[n - 1] = cy;
+      for (i = 2; i < n; i++)
+        {
+          mp_limb_t cy;
+          cy = mpn_addmul_1 (&tp[2 * i - 2], up + i, n - i, up[i - 1]);
+          tp[n + i - 2] = cy;
+        }
+
+      for (i = 0; i < n; i++)
+      {
+        mp_limb_t ul, lpl;
+        ul = up[i];
+        gmp_umul_ppmm (rp[2 * i + 1], lpl, ul, ul);
+        rp[2 * i] = lpl;
+      }
+      cy = mpn_lshift (tp, tp, 2 * n - 2, 1);
+      cy += mpn_add_n (rp + 1, rp + 1, tp, 2 * n - 2);
+      rp[2 * n - 1] += cy;
+    }
+}
+
 #if 0
 static int
 mpn_cmp (mp_srcptr ap, mp_srcptr bp, mp_size_t n)
@@ -692,6 +730,10 @@ my_fermat_test (const mp_srcptr msp, mp_size_t mn)
     mpn_lshift(mshifted, mp, mn, minv.shift);
     mp = mshifted;
   }
+  else
+  {
+    for (i = 0; i < mn; ++i) mshifted[i] = mp[i];
+  }
 
   for (i = 0; i < mn; ++i) r[i] = 0;
   r[mn] = 1 << minv.shift;
@@ -723,7 +765,7 @@ my_fermat_test (const mp_srcptr msp, mp_size_t mn)
       startbit = GMP_LIMB_HIGHBIT;
       do
         {
-          mpn_mul (tp, rp, mn, rp, mn);
+          mpn_sqr (tp, rp, mn);
           MPN_REDC_1(rp, tp, mp, mn, mi);
           if (w & bit)
           {
