@@ -34,7 +34,7 @@ mp_limb_t primorial[Q_LEN] = { 3990313926u, 1301064672u, 203676164u, 3309914335u
     mp_limb_t cy;                                                       \
     cy = mpn_redc_1 (rp, up, mp, n, invm);                              \
     if (cy != 0)                                                        \
-      mpn_sub_n (rp, rp, mp, n);                                        \
+      mpn_sub_n (rp, rp, mshifted, n);                                  \
   } while (0)
 
 const unsigned char  binvert_limb_table[128] = {
@@ -148,6 +148,7 @@ const unsigned char  binvert_limb_table[128] = {
 
 #define mpn_invert_limb(x) mpn_invert_3by2 ((x), 0)
 
+#if 0
 static mp_size_t
 mpn_normalized_size (mp_srcptr xp, mp_size_t n)
 {
@@ -155,6 +156,7 @@ mpn_normalized_size (mp_srcptr xp, mp_size_t n)
     ;
   return n;
 }
+#endif
 
 static mp_limb_t
 mpn_sub_1 (mp_ptr rp, mp_srcptr ap, mp_size_t n, mp_limb_t b)
@@ -555,7 +557,6 @@ mpn_div_r_preinv_ns (mp_ptr np, mp_size_t nn,
       assert (inv->d1 == dp[dn-1]);
       assert (inv->d0 == dp[dn-2]);
       assert ((inv->d1 & GMP_LIMB_HIGHBIT) != 0);
-			assert (inv->shift == 0);
 
       nh = 0;
 
@@ -595,32 +596,85 @@ mpn_lshift (mp_ptr rp, mp_srcptr up, mp_size_t n, unsigned int cnt)
   return retval;
 }
 
+static mp_limb_t
+mpn_rshift (mp_ptr rp, mp_srcptr up, mp_size_t n, unsigned int cnt)
+{
+  mp_limb_t high_limb, low_limb;
+  unsigned int tnc;
+  mp_size_t i;
+  mp_limb_t retval;
+
+  assert (n >= 1);
+  assert (cnt >= 1);
+  assert (cnt < GMP_LIMB_BITS);
+
+  tnc = GMP_LIMB_BITS - cnt;
+  high_limb = *up++;
+  retval = (high_limb << tnc);
+  low_limb = high_limb >> cnt;
+
+  for (i = n; --i != 0;)
+    {
+      high_limb = *up++;
+      *rp++ = low_limb | (high_limb << tnc);
+      low_limb = high_limb >> cnt;
+    }
+  *rp = low_limb;
+
+  return retval;
+}
+
+#if 0
+static int
+mpn_cmp (mp_srcptr ap, mp_srcptr bp, mp_size_t n)
+{
+  while (--n >= 0)
+    {
+      if (ap[n] != bp[n])
+        return ap[n] > bp[n] ? 1 : -1;
+    }
+  return 0;
+}
+#endif
+
 static int
 my_fermat_test (const mp_srcptr msp, mp_size_t mn)
 {
-  mp_fixed_len_num r, ep;
+  mp_fixed_len_num r, ep, mshifted;
   mp_double_fixed_len_num t;
   mp_ptr mp, tp, rp;
   mp_size_t en;
-  mp_size_t ebi;
+  mp_limb_t startbit;
   struct gmp_div_inverse minv;
   unsigned i;
 
+  // REDCify: r = B^n * 2 % M
   mp = msp;
+  mpn_div_qr_invert (&minv, mp, mn);
+
+  if (minv.shift > 0)
+  {
+    mpn_lshift(mshifted, mp, mn, minv.shift);
+    mp = mshifted;
+  }
+
+  for (i = 0; i < mn; ++i) r[i] = 0;
+  r[mn] = 1 << minv.shift;
+  mpn_div_r_preinv_ns(r, mn+1, mp, mn, &minv);
+
+  if (minv.shift > 0)
+  {
+    mpn_rshift(r, r, mn, minv.shift);
+    mp = msp;
+  }
+
   en = mn;
   mpn_sub_1(ep, mp, mn, 1);
-  //gmp_clz(ebi, ep[en-1]);
-  //ebi += 32 * (en-1);
+  gmp_clz(startbit, ep[en-1]);
+  startbit = GMP_LIMB_HIGHBIT >> startbit;
   mp_limb_t mi;
   binvert_limb(mi, mp[0]);
   mi = -mi;
-
-  // REDCify: t = B^n * 2 % M
-  mpn_div_qr_invert (&minv, mp, mn);
-  
-  for (i = 0; i < mn; ++i) r[i] = 0;
-  r[mn] = 1;
-  mpn_div_r_preinv_ns(r, mn+1, mp, mn, &minv);
 
   tp = t;
   rp = r;
@@ -630,7 +684,8 @@ my_fermat_test (const mp_srcptr msp, mp_size_t mn)
       mp_limb_t w = ep[en];
       mp_limb_t bit;
 
-      bit = GMP_LIMB_HIGHBIT;
+      bit = startbit;
+      startbit = GMP_LIMB_HIGHBIT;
       do
         {
           mpn_mul (tp, rp, mn, rp, mn);
@@ -638,28 +693,32 @@ my_fermat_test (const mp_srcptr msp, mp_size_t mn)
           if (w & bit)
           {
             mp_limb_t carry = mpn_lshift (rp, rp, mn, 1);
-            if (carry)
+            while (carry)
             {
-              mpn_sub_n(rp, rp, mp, mn);
-            } 
+              carry -= mpn_sub_n(rp, rp, mshifted, mn);
+            }
           }
           bit >>= 1;
         }
       while (bit > 0);
     }
 
-  // DeREDCify
+  // DeREDCify - necessary as rp can have a large
+  //             multiple of m in it (although I'm not 100% sure
+  //             why it can't after this redc!)
   for (i = 0; i < mn; ++i) t[i] = r[i];
   for (; i < mn*2; ++i) t[i] = 0;
   MPN_REDC_1(rp, tp, mp, mn, mi);
 
   if (rp[mn-1] != 0)
   {
+    // Compare to m+1
     mpn_sub_1(tp, rp, mn, 1);
     for (i = 0; i < mn; ++i) if (tp[i] != mp[i]) return 0;
     return 1;
   }
 
+  // COmpare to 1
   for (i = 1; i < mn-1; ++i) if (rp[i] != 0) return 0;
   return rp[0] == 1;
 }
