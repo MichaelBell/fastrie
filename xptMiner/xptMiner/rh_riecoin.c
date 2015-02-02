@@ -667,7 +667,7 @@ static void epipTester()
             if (checkRestart())
             {
               cancelEverything = 1;
-              break;
+              goto CANCEL;
             }
           }
           inbuf[core].num_candidates = 0;
@@ -677,16 +677,15 @@ static void epipTester()
     }
   }
 
-  if (!cancelEverything)
+  for (core = 0; core < 16; core++)
   {
-    for (core = 0; core < 16; core++)
-    {
-      //printf("Send %d candidates to core %d\n", inbuf[core].num_candidates, core);
-      e_write(&epip_mem, 0, 0, EPIP_PTEST_IN_OFFSET(core), &inbuf[core], sizeof(ptest_indata_t));
-      e_start(&epip_dev, core>>2, core&3);
-    }
-    epipReadTestResults(16);
+    //printf("Send %d candidates to core %d\n", inbuf[core].num_candidates, core);
+    e_write(&epip_mem, 0, 0, EPIP_PTEST_IN_OFFSET(core), &inbuf[core], sizeof(ptest_indata_t));
+    e_start(&epip_dev, core>>2, core&3);
   }
+  epipReadTestResults(16);
+
+CANCEL:
   pthread_join(test_tid[0], NULL);
   pthread_join(test_tid[1], NULL);
 }
@@ -700,6 +699,7 @@ void rh_search(mpz_t target)
   initSieve();
   if (checkRestart())
   {
+    cancelEverything = 1;
     pthread_join(test_tid[0], NULL);
     return;
   }
