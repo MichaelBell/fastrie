@@ -854,8 +854,11 @@ int main()
       mpn_add_1_inplace(c, cn, 2);
       if (my_fermat_test(c, cn)) primes++;
 
-      mpn_add_1_inplace(c, cn, 4);
-      if (my_fermat_test(c, cn)) primes++;
+      if (primes >= 3)
+      {
+        mpn_add_1_inplace(c, cn, 4);
+        if (my_fermat_test(c, cn)) primes++;
+      }
 
       ptest_result_t result;
       result.k = inbuf.k[i];

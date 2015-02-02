@@ -571,10 +571,13 @@ static void* testThread(__attribute__ ((unused)) void* unused)
         mpz_powm(testres, two, testpow, candidate);
         if (mpz_cmp_ui(testres, 1) == 0) primes++;
 
-        mpz_add_ui(testpow, testpow, 4);
-        mpz_add_ui(candidate, candidate, 4);
-        mpz_powm(testres, two, testpow, candidate);
-        if (mpz_cmp_ui(testres, 1) == 0) primes++;
+        if (primes >= 3)
+        {
+          mpz_add_ui(testpow, testpow, 4);
+          mpz_add_ui(candidate, candidate, 4);
+          mpz_powm(testres, two, testpow, candidate);
+          if (mpz_cmp_ui(testres, 1) == 0) primes++;
+        }
 
         mpz_sub_ui(candidate, candidate, 16);
         reportSuccess(candidate, primes);

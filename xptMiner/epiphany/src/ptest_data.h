@@ -1,7 +1,7 @@
 #include "common.h"
 
 // Input data - will test n+k*q#+{0,4,6,10,12,16}
-#define PTEST_NUM_CANDIDATES 16
+#define PTEST_NUM_CANDIDATES 8
 typedef struct 
 {
   unsigned k[PTEST_NUM_CANDIDATES];

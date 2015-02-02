@@ -281,11 +281,11 @@ void xptMiner_xptQueryWorkLoop()
 
 					if( passedSeconds > 5 )
 					{
-						speedRate_2ch = (double)total2ChainCount * 4096.0 / (double)passedSeconds / 1000.0;
-						speedRate_3ch = (double)total3ChainCount * 4096.0 / (double)passedSeconds / 1000.0;
-						speedRate_4ch = (double)total4ChainCount * 4096.0 / (double)passedSeconds / 1000.0;
+						speedRate_2ch = (double)total2ChainCount * 60.0 / (double)passedSeconds;
+						speedRate_3ch = (double)total3ChainCount * 60.0 / (double)passedSeconds;
+						speedRate_4ch = (double)total4ChainCount * 60.0 / (double)passedSeconds;
 					}
-					printf("[%02d:%02d:%02d] 2ch/s: %.4lf 3ch/s: %.4lf 4ch/s: %.4lf Shares total: %d / %d\n", (passedSeconds/3600)%60, (passedSeconds/60)%60, (passedSeconds)%60, speedRate_2ch, speedRate_3ch, speedRate_4ch, totalShareCount, totalShareCount-totalRejectedShareCount);
+					printf("[%02d:%02d:%02d] 2ch/m: %.4lf 3ch/m: %.4lf 4ch/m: %.4lf Shares total: %d / %d\n", (passedSeconds/3600)%100, (passedSeconds/60)%60, (passedSeconds)%60, speedRate_2ch, speedRate_3ch, speedRate_4ch, totalShareCount, totalShareCount-totalRejectedShareCount);
 					fflush(stdout);
 				}
 
