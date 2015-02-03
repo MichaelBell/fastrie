@@ -275,7 +275,7 @@ static void* lowSieve(void* void_maxj)
 
   while (primeTable[minj] < SIEVE_SIZE)
   {
-          for (unsigned l = 0; l < SIEVE_SIZE; l += 2400000)
+          for (unsigned l = 0; l < SIEVE_SIZE && !cancelEverything; l += 2400000)
           {
             for (unsigned j = minj; j < maxj; ++j)
             {
@@ -292,6 +292,7 @@ static void* lowSieve(void* void_maxj)
               }
             }
           }
+    if (cancelEverything) break;
     minj = maxj;
     while (*maxjptr == maxj);
     maxj = *maxjptr;
@@ -300,7 +301,8 @@ static void* lowSieve(void* void_maxj)
   }
 
   // Start one tester immediately, even though epip hasn't finished sieving.
-  pthread_create(&test_tid[0], NULL, testThread, NULL);
+  if (!cancelEverything)
+    pthread_create(&test_tid[0], NULL, testThread, NULL);
 
   return NULL;
 }
@@ -409,10 +411,20 @@ static void initSieve()
         if (coredone & (1<<core)) continue;
 
         unsigned status;
+        unsigned sleeps = 0;
         do
         {
           e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &status, sizeof(unsigned));
           nanosleep(&sleeptime, NULL);
+
+          if (sleeps > 1000000)
+          {
+            // Seen this once in over 50 hours.  Cancel everything and break out.
+            printf("Error: Core %d stuck while sieving\n", core);
+            cancelEverything = 1;
+            pthread_join(lowsievethread, NULL);
+            return;
+          }
         } while(status != 2);
     
         if (e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &modp_outbuf, sizeof(modp_outdata_t)) != sizeof(modp_outdata_t)) printf("Read error on core %d buf %d\n", core, buf);
@@ -494,6 +506,12 @@ static void initSieve()
           //printf("Core %d complete\n", core);
           coredone |= 1<<core;
         }
+      }
+      if (checkRestart())
+      {
+        cancelEverything = 1;
+        pthread_join(lowsievethread, NULL);
+        return;
       }
       if (coredone==0xffff) 
       {
@@ -700,7 +718,7 @@ void rh_search(mpz_t target)
   mpz_set(base, target);
  
   initSieve();
-  if (checkRestart())
+  if (cancelEverything || checkRestart())
   {
     cancelEverything = 1;
     pthread_join(test_tid[0], NULL);

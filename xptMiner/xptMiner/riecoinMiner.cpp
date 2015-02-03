@@ -19,7 +19,7 @@ CRITICAL_SECTION success_lock;
 
 unsigned checkRestart()
 {
-  DPRINTF("Check restart\n");
+//  DPRINTF("Check restart\n");
     if( verify_block->height != monitorCurrentBlockHeight ) {
       DPRINTF("Restart (height)\n");
       return 1;
