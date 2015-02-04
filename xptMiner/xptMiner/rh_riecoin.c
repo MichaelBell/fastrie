@@ -415,9 +415,11 @@ static void initSieve()
         do
         {
           e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &status, sizeof(unsigned));
+          if (status == 2) break;
+
           nanosleep(&sleeptime, NULL);
 
-          if (sleeps > 1000000)
+          if (++sleeps > 1000000)
           {
             // Seen this once in over 50 hours.  Cancel everything and break out.
             printf("Error: Core %d stuck while sieving\n", core);
@@ -425,7 +427,7 @@ static void initSieve()
             pthread_join(lowsievethread, NULL);
             return;
           }
-        } while(status != 2);
+        } while(1);
     
         if (e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &modp_outbuf, sizeof(modp_outdata_t)) != sizeof(modp_outdata_t)) printf("Read error on core %d buf %d\n", core, buf);
         status = 0;
