@@ -30,9 +30,9 @@
 // b = 2^(z+264) + a * 2^z where a is 256-bits and z > 256.
 // x+k.q#+16057 must be < 256-bits => limit on q# of say 220-bits => q=167 pi(q)=39.
 
-#define MAX_SIEVE_PRIME  962696017 // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
-#define PRIME_TABLE_SIZE 49045812  // Not including 2.
-#define LOW_PRIME_IDX    3343
+#define MAX_SIEVE_PRIME  979270213 // Should be just < multiple of MODP_E_SIEVE_SIZE<<5 + prime[LOW_PRIME_INDEX]
+#define PRIME_TABLE_SIZE 49846420  // Not including 2.
+#define LOW_PRIME_IDX    3372
 //#define MAX_SIEVE_PRIME  373839797 // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
 //#define PRIME_TABLE_SIZE 20012797  // Not including 2.
 //#define MAX_SIEVE_PRIME  162529309  // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
@@ -75,6 +75,7 @@ static e_mem_t epip_mem;
 static reportSuccess_t reportSuccess;
 static checkRestart_t checkRestart;
 static volatile unsigned cancelEverything;
+static volatile unsigned lowSieveDone;
 static pthread_t test_tid[2];
 
 #define SIEVE_BLOCK_SIZE 240000
@@ -300,11 +301,59 @@ static void* lowSieve(void* void_maxj)
     //fprintf(stderr, "Low sieved to %d (%d)\n", minj, primeTable[minj]);
   }
 
+  lowSieveDone = 1;
+
   // Start one tester immediately, even though epip hasn't finished sieving.
   if (!cancelEverything)
     pthread_create(&test_tid[0], NULL, testThread, NULL);
 
   return NULL;
+}
+
+static void singleTest(unsigned i, mpz_t candidate, mpz_t testpow, mpz_t testres, mpz_t two)
+{
+        unsigned primes = 0;
+
+        mpz_mul_ui(candidate, primorial, i);
+        mpz_add(candidate, candidate, xPlus16057);
+
+        //gmp_printf("Candidate: %Zd\n", candidate);
+        mpz_sub_ui(testpow, candidate, 1);
+        mpz_powm(testres, two, testpow, candidate);
+        if (mpz_cmp_ui(testres, 1) == 0) primes++;
+        if (primes < 1) return;
+
+        mpz_add_ui(testpow, testpow, 4);
+        mpz_add_ui(candidate, candidate, 4);
+        mpz_powm(testres, two, testpow, candidate);
+        if (mpz_cmp_ui(testres, 1) == 0) primes++;
+
+        mpz_add_ui(testpow, testpow, 2);
+        mpz_add_ui(candidate, candidate, 2);
+        mpz_powm(testres, two, testpow, candidate);
+        if (mpz_cmp_ui(testres, 1) == 0) primes++;
+
+        mpz_add_ui(testpow, testpow, 4);
+        mpz_add_ui(candidate, candidate, 4);
+        mpz_powm(testres, two, testpow, candidate);
+        if (mpz_cmp_ui(testres, 1) == 0) primes++;
+        if (primes < 2) return;
+
+        mpz_add_ui(testpow, testpow, 2);
+        mpz_add_ui(candidate, candidate, 2);
+        mpz_powm(testres, two, testpow, candidate);
+        if (mpz_cmp_ui(testres, 1) == 0) primes++;
+
+        if (primes >= 3)
+        {
+          mpz_add_ui(testpow, testpow, 4);
+          mpz_add_ui(candidate, candidate, 4);
+          mpz_powm(testres, two, testpow, candidate);
+          if (mpz_cmp_ui(testres, 1) == 0) primes++;
+        }
+
+        mpz_sub_ui(candidate, candidate, 16);
+        reportSuccess(candidate, primes);
 }
 
 // Assumes hash, primorial, trailingBits are set.
@@ -321,7 +370,7 @@ static void initSieve()
 
   memset(sieve, 0, SIEVE_SIZE>>3);
   memset(sieveHighPrime, 0, SIEVE_SIZE>>3);
-  nextSieveIdx = 0;
+  nextSieveIdx = SIEVE_BLOCK_SIZE;
 
   mpz_fdiv_r(xPlus16057, base, primorial);     // Actually b mod q#
   mpz_sub(xPlus16057, primorial, xPlus16057);  // Now x
@@ -368,10 +417,18 @@ static void initSieve()
     sieveOffsets[5][j] = k;
   }
 
-  //printf("Low sieve initialized to %d (j=%d)\n", primeTable[j], j);
+  printf("Low sieve initialized to %d (j=%d)\n", primeTable[j], j);
+  lowSieveDone = 0;
 
   pthread_t lowsievethread;
   pthread_create(&lowsievethread, NULL, lowSieve, &j);
+
+  mpz_t candidate, testpow, testres, two;
+  mpz_init(candidate);
+  mpz_init(testpow);
+  mpz_init(testres);
+  mpz_init_set_ui(two, 2);
+  unsigned testi = 0;
 
   unsigned pbase = primeTable[j] - (primeTable[j] & 0x3e);
   while (pbase + (MODP_E_SIEVE_SIZE<<(1+4)) < MAX_SIEVE_PRIME)
@@ -403,6 +460,21 @@ static void initSieve()
       e_start(&epip_dev, core>>2, core&3);
     }
 
+    if (lowSieveDone)
+    {
+      //fprintf(stderr, "T");
+      for (; testi < SIEVE_BLOCK_SIZE; ++testi)
+      {
+        if (((sieve[testi>>5] & (1<<(testi&0x1f))) == 0) &&
+            ((sieveHighPrime[testi>>5] & (1<<(testi&0x1f))) == 0))
+        {
+          singleTest(testi, candidate, testpow, testres, two);
+          ++testi;
+          break;
+        }
+      }
+    }
+
     unsigned coredone = 0;
     for (unsigned buf = 0;; buf ^= 1)
     {
@@ -429,7 +501,8 @@ static void initSieve()
           }
         } while(1);
     
-        if (e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &modp_outbuf, sizeof(modp_outdata_t)) != sizeof(modp_outdata_t)) printf("Read error on core %d buf %d\n", core, buf);
+        e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &modp_outbuf, 8);
+        e_read(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf)+8, &modp_outbuf.result[0], modp_outbuf.num_results*sizeof(modp_result_t));
         status = 0;
         e_write(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &status, sizeof(unsigned));
         e_start(&epip_dev, core>>2, core&3);
@@ -532,6 +605,21 @@ static void initSieve()
   clock_gettime(CLOCK_MONOTONIC, &tv);
   end = tv.tv_sec + (tv.tv_nsec / 1000000000.0);
   printf("Sieved in %.3f\n", end - start);
+
+  for (; testi < SIEVE_BLOCK_SIZE; ++testi)
+  {
+    if (((sieve[testi>>5] & (1<<(testi&0x1f))) == 0) &&
+        ((sieveHighPrime[testi>>5] & (1<<(testi&0x1f))) == 0))
+    {
+      fprintf(stderr, "T");
+      singleTest(testi, candidate, testpow, testres, two);
+    }
+  }
+  //printf("Finished first block on sieve thread\n");
+  mpz_clear(candidate);
+  mpz_clear(testpow);
+  mpz_clear(testres);
+  mpz_clear(two);
 }
 
 static void* testThread(__attribute__ ((unused)) void* unused)
@@ -559,48 +647,7 @@ static void* testThread(__attribute__ ((unused)) void* unused)
       if (((sieve[i>>5] & (1<<(i&0x1f))) == 0) &&
           ((sieveHighPrime[i>>5] & (1<<(i&0x1f))) == 0))
       {
-        unsigned primes = 0;
-
-        mpz_mul_ui(candidate, primorial, i);
-        mpz_add(candidate, candidate, xPlus16057);
-              
-        //gmp_printf("Candidate: %Zd\n", candidate);
-        mpz_sub_ui(testpow, candidate, 1);
-        mpz_powm(testres, two, testpow, candidate);
-        if (mpz_cmp_ui(testres, 1) == 0) primes++;
-        if (primes < 1) continue;
-
-        mpz_add_ui(testpow, testpow, 4);
-        mpz_add_ui(candidate, candidate, 4);
-        mpz_powm(testres, two, testpow, candidate);
-        if (mpz_cmp_ui(testres, 1) == 0) primes++;
-
-        mpz_add_ui(testpow, testpow, 2);
-        mpz_add_ui(candidate, candidate, 2);
-        mpz_powm(testres, two, testpow, candidate);
-        if (mpz_cmp_ui(testres, 1) == 0) primes++;
-
-        mpz_add_ui(testpow, testpow, 4);
-        mpz_add_ui(candidate, candidate, 4);
-        mpz_powm(testres, two, testpow, candidate);
-        if (mpz_cmp_ui(testres, 1) == 0) primes++;
-        if (primes < 2) continue;
-
-        mpz_add_ui(testpow, testpow, 2);
-        mpz_add_ui(candidate, candidate, 2);
-        mpz_powm(testres, two, testpow, candidate);
-        if (mpz_cmp_ui(testres, 1) == 0) primes++;
-
-        if (primes >= 3)
-        {
-          mpz_add_ui(testpow, testpow, 4);
-          mpz_add_ui(candidate, candidate, 4);
-          mpz_powm(testres, two, testpow, candidate);
-          if (mpz_cmp_ui(testres, 1) == 0) primes++;
-        }
-
-        mpz_sub_ui(candidate, candidate, 16);
-        reportSuccess(candidate, primes);
+        singleTest(i, candidate, testpow, testres, two);
       }
     }
   }
@@ -715,6 +762,11 @@ CANCEL:
 
 void rh_search(mpz_t target)
 {
+  struct timespec tv;
+  double start, end;
+  clock_gettime(CLOCK_MONOTONIC, &tv);
+  start = tv.tv_sec + (tv.tv_nsec / 1000000000.0);
+
   cancelEverything = 0;
 
   mpz_set(base, target);
@@ -726,11 +778,6 @@ void rh_search(mpz_t target)
     pthread_join(test_tid[0], NULL);
     return;
   }
-
-  struct timespec tv;
-  double start, end;
-  clock_gettime(CLOCK_MONOTONIC, &tv);
-  start = tv.tv_sec + (tv.tv_nsec / 1000000000.0);
 
   // First thread was kicked off already.
   pthread_create(&test_tid[1], NULL, testThread, NULL);

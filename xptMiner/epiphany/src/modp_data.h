@@ -12,7 +12,7 @@ typedef struct
   mp_fixed_len_num n;
 } modp_indata_t;
 
-#define MODP_RESULTS_PER_PAGE 2047
+#define MODP_RESULTS_PER_PAGE 3999
 typedef struct 
 {
 #ifdef MODP_RESULT_DEBUG
