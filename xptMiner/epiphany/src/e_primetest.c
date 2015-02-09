@@ -391,8 +391,8 @@ static mp_limb_t
 mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 {
   mp_limb_t ul, cl, hpl, lpl, rl;
-  mp_limb_t ul2, cl2, lpl2, rl2;
-  mp_ptr up2, rp2;
+  mp_limb_t ul2, cl2, lpl2;
+  mp_ptr up2;
   mp_size_t halfn = n>>1;
 
   assert (n >= 1);
@@ -414,8 +414,7 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
       n--;
     }
 
-  up2 = up + (n>>1);
-  rp2 = rp + (n>>1);
+  up2 = up + halfn;
   cl2 = 0;
 
   unsigned vll = vl & 0xffff;
@@ -426,12 +425,11 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
       unsigned lowmask = 0xffff;
       unsigned one = 1;
       unsigned halfbit = 0x10000;
+      unsigned halfnidx = halfn << 2;
       unsigned x1c, x5c, clc, clc2, clc3;
       unsigned x1, x2, x3, x4, x5, x6, x7;
       ul = *up++;
         ul2 = *up2++;
-      rl = *rp;
-        rl2 = *rp2;
 
 #define REG(x) [x] "+r"(x)
 #define TMP(x) [x] "=r"(x)
@@ -439,21 +437,7 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 #define INREG(x) [x] "r"(x)
 #define CNST(x) [x] "r"(x)
 
-#if 0
-      asm("\
-        and %[x1], %[ul], %[lowmask]    \n\
-          isub %[x1c], %[one], %[one]   \n\
-          isub %[x5c], %[one], %[one]   \n\
-          isub %[clc], %[one], %[one]   \n\
-	  imul %[lpl2], %[x1], %[vll] ; lpl2 reused for x0   \n\
-	and %[lpl], %[lpl2], %[lowmask]" :
-  OUTREG(lpl), OUTREG(lpl2),
-  TMP(x1), 
-  TMP(x1c), TMP(x5c), TMP(clc) :
-  INREG(ul), INREG(vll), 
-  CNST(lowmask), CNST(one) : "cc");
-#else
-      asm("\n\
+      asm volatile ("\n\
 	and %[x1], %[ul], %[lowmask]    \n\
 	  isub %[x1c], %[one], %[one]    \n\
 	lsr %[x3], %[ul], #16           \n\
@@ -461,9 +445,9 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 	  imul %[lpl2], %[x1], %[vll] ; lpl2 reused for x0    \n\
 	lsr %[x7], %[ul2], #16         \n\
 	  imul %[x1], %[x1], %[vlh]     \n\
-        \n\
+        ldr %[ul], [%[rp]]            ; ul reused for rl\n\
 	  imul %[x4], %[x6], %[vll]   \n\
-        \n\
+        ldr %[ul2], [%[rp],%[halfnidx]]  ; ul2 reused for rl2\n\
 	  imul %[x2], %[x3], %[vll]     \n\
 	lsr %[clc3], %[lpl2], #16         ; clc3 reused for x0h  \n\
 	  imul %[x3], %[x3], %[vlh]     \n\
@@ -497,29 +481,27 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 	  isub %[clc], %[one], %[one]  \n\
 	movgteu %[clc2], %[one]          \n\
 	add %[x6], %[x6], %[x7]      \n\
-	add %[lpl], %[lpl], %[rl]        \n\
+	add %[lpl], %[lpl], %[ul]        \n\
 	movgteu %[clc3], %[one]          \n\
 	  iadd %[cl2], %[clc2], %[x6]  \n\
-	add %[cl], %[cl], %[clc3]        \n\
-	add %[lpl2], %[lpl2], %[rl2]     \n\
+	add %[lpl2], %[lpl2], %[ul2]     \n\
 	movgteu %[clc], %[one]           \n\
-	add %[cl2], %[cl2], %[clc]" :
+	  iadd %[cl], %[cl], %[clc3]        \n\
+        str %[lpl2], [%[rp], %[halfnidx]] \n\
+        str %[lpl], [%[rp]], #+1       \n\
+	  iadd %[cl2], %[cl2], %[clc]" :
   OUTREG(lpl), OUTREG(lpl2),
   TMP(x1), TMP(x2), TMP(x3), TMP(x4), TMP(x5), TMP(x6), TMP(x7), 
   TMP(x1c), TMP(x5c), TMP(clc), TMP(clc2), TMP(clc3),
-  REG(rl), REG(rl2), REG(cl), REG(cl2) :
-  INREG(ul), INREG(vll), INREG(vlh),
-  INREG(ul2),
+  REG(ul), REG(ul2), REG(cl), REG(cl2), REG(rp) :
+  INREG(vll), INREG(vlh), INREG(halfnidx),
   CNST(lowmask), CNST(one), CNST(halfbit) : "cc");
-#endif
 
 #undef REG
 #undef TMP
 #undef INREG
 #undef CNST
 
-      *rp++ = lpl;
-        *rp2++ = lpl2;
       n -= 2;
     }
 
