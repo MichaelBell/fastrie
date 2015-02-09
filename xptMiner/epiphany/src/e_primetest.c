@@ -456,33 +456,35 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
       asm("\n\
 	and %[x1], %[ul], %[lowmask]    \n\
 	  isub %[x1c], %[one], %[one]    \n\
-	  isub %[x5c], %[one], %[one]  \n\
-	  isub %[clc], %[one], %[one]  \n\
 	lsr %[x3], %[ul], #16           \n\
-	  imul %[lpl2], %[x1], %[vll] ; lpl2 reused for x0    \n\
 	and %[x6], %[ul2], %[lowmask]  \n\
-	  imul %[x1], %[x1], %[vlh]     \n\
-	  imul %[x2], %[x3], %[vll]     \n\
-	  imul %[x3], %[x3], %[vlh]     \n\
+	  imul %[lpl2], %[x1], %[vll] ; lpl2 reused for x0    \n\
 	lsr %[x7], %[ul2], #16         \n\
+	  imul %[x1], %[x1], %[vlh]     \n\
+        \n\
 	  imul %[x4], %[x6], %[vll]   \n\
+        \n\
+	  imul %[x2], %[x3], %[vll]     \n\
 	lsr %[clc3], %[lpl2], #16         ; clc3 reused for x0h  \n\
-	  imul %[x5], %[x6], %[vlh]   \n\
+	  imul %[x3], %[x3], %[vlh]     \n\
 	add %[x1], %[x1], %[clc3]         \n\
-	  imul %[x6], %[x7], %[vll]   \n\
+	  imul %[x5], %[x6], %[vlh]   \n\
 	and %[lpl], %[lpl2], %[lowmask]    \n\
-	  imul %[x7], %[x7], %[vlh]   \n\
+	  imul %[x6], %[x7], %[vll]   \n\
 	lsr %[lpl2], %[x4], #16          ; lpl2 reused for x4h \n\
-	  isub %[clc2], %[one], %[one] \n\
+	  imul %[x7], %[x7], %[vlh]   \n\
 	add %[x1], %[x1], %[x2]          \n\
-	  isub %[clc3], %[one], %[one] \n\
+	  isub %[x5c], %[one], %[one]  \n\
 	movgteu %[x1c], %[halfbit]       \n\
+	  isub %[clc], %[one], %[one]  \n\
 	add %[x5], %[x5], %[lpl2]         \n\
 	  imadd %[lpl], %[x1], %[halfbit]\n\
 	and %[lpl2], %[x4], %[lowmask]  \n\
 	  iadd %[x3], %[x3], %[x1c]      \n\
 	lsr %[x2], %[x1], #16          ; x2 reused for hpl \n\
+	  isub %[clc2], %[one], %[one] \n\
 	add %[x5], %[x5], %[x6]          \n\
+	  isub %[clc3], %[one], %[one] \n\
 	movgteu %[x5c], %[halfbit]       \n\
 	  iadd %[x2], %[x2], %[x3]     \n\
 	add %[lpl], %[lpl], %[cl]        \n\
