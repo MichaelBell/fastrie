@@ -77,7 +77,7 @@ else
 
 endif
 
-all: xptminer$(EXTENSION)
+all: xptminer$(EXTENSION) xptMiner/test epiphany/bin/e_primetest.elf
 
 xptMiner/%.o: xptMiner/%.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCLUDEPATHS) $< -o $@ 
@@ -87,6 +87,12 @@ xptMiner/%.o: xptMiner/%.c
 
 xptminer$(EXTENSION): $(OBJS:xptMiner/%=xptMiner/%) $(JHLIB:xptMiner/jhlib/%=xptMiner/jhlib/%)
 	$(CXX) $(CFLAGS) $(LIBPATHS) $(INCLUDEPATHS) $(STATIC) -o $@ $^ $(LIBS) -flto
+
+xptMiner/test: xptMiner/testharness.cpp xptMiner/riecoinMiner.o xptMiner/rh_riecoin.o xptMiner/sha2.o
+	cd xptMiner && ./buildtest.sh
+
+epiphany/bin/e_primetest.elf: epiphany/src/e_primetest.c epiphany/src/e_modp.c epiphany/src/common.h epiphany/src/ptest_data.h epiphany/src/modp_data.h
+	cd epiphany && ./build.sh
 
 clean:
 	-rm -f xptminer
