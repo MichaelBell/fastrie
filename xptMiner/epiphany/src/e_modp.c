@@ -202,23 +202,11 @@ mpn_lshift (mp_ptr rp, mp_srcptr up, mp_size_t n, unsigned int cnt)
 
 
 static mp_limb_t
-mpn_div_r_1_preinv (mp_srcptr np, mp_size_t nn,
-                    const struct gmp_div_inverse *inv)
+mpn_div_r_1_preinv_ns(mp_srcptr np, mp_size_t nn,
+                      const struct gmp_div_inverse *inv)
 {
   mp_limb_t d, di;
-  mp_limb_t r;
-  mp_fixed_len_num tnum;
-  mp_ptr tp;
-
-// Wouldn't it be better to shift on the fly?
-//  if (inv->shift > 0)
-    {
-      tp = tnum;
-      r = mpn_lshift (tp, np, nn, inv->shift);
-      np = tp;
-    }
-//  else
-//    r = 0;
+  mp_limb_t r = 0;
 
   d = inv->d1;
   di = inv->di;
@@ -367,6 +355,10 @@ int main()
 
     unsigned num_results;
     unsigned i = 0;
+    mp_fixed_len_num nshifted, qshifted;
+    mp_size_t nshiftedn = 0, qshiftedn = 0;
+    unsigned lastshift = 0xffffffff;
+
     do
     {
       modp_outdata_t* out = outbufs[buffer];
@@ -391,9 +383,33 @@ int main()
           struct gmp_div_inverse inv;
           mpn_div_qr_1_invert (&inv, p);
 
+          if (inv.shift != lastshift)
+          {
+            mp_limb_t h;
+            h = mpn_lshift(nshifted, inbuf.n, inbuf.nn, inv.shift);
+            if (h) 
+            {
+              nshifted[inbuf.nn] = h;
+              nshiftedn = inbuf.nn + 1;
+            }
+            else
+              nshiftedn = inbuf.nn;
+
+            h = mpn_lshift(qshifted, primorial, Q_LEN, inv.shift);
+            if (h) 
+            {
+              qshifted[Q_LEN] = h;
+              qshiftedn = Q_LEN + 1;
+            }
+            else
+              qshiftedn = Q_LEN;
+
+            lastshift = inv.shift;
+          }
+
           modp_result_t result;
-          result.r = mpn_div_r_1_preinv (inbuf.n, inbuf.nn, &inv);
-          mp_limb_t q = mpn_div_r_1_preinv(primorial, 7, &inv);
+          result.r = mpn_div_r_1_preinv_ns(nshifted, nshiftedn, &inv);
+          mp_limb_t q = mpn_div_r_1_preinv_ns(qshifted, qshiftedn, &inv);
 #ifdef MODP_RESULT_DEBUG
           result.p = p;
           result.q = q;
