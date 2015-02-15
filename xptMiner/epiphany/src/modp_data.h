@@ -18,6 +18,8 @@ typedef struct
 #ifdef MODP_RESULT_DEBUG
   unsigned p;
   unsigned q;
+  unsigned x;
+  unsigned y;
 #endif
 
   // r = (n*q^-1)%p

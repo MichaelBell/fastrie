@@ -515,11 +515,15 @@ static void initSieve()
           // Find b + x + 16057 mod p
           unsigned p = primeTable[corej[core]];
 #ifdef MODP_RESULT_DEBUG
+          unsigned q = mpz_fdiv_ui(primorial, p);
           unsigned qinv = primeTableInverses[corej[core]];
           unsigned result = mpz_fdiv_ui(xPlus16057, p);
           unsigned invresult = mulmod64(result, qinv, p);
 
           if (result >= p) result -= p;
+          if (p != modp_outbuf.result[i].p) printf("Bad p: p=%d should be %d (core %d)\n", modp_outbuf.result[i].p, p, core);
+          if (q != modp_outbuf.result[i].q) printf("Bad q: q=%d should be %d p=%d/%d (core %d)\n", modp_outbuf.result[i].q, q, modp_outbuf.result[i].p, p, core);
+          if (result != modp_outbuf.result[i].x) printf("Bad x: x=%d should be %d p=%d/%d (core %d)\n", modp_outbuf.result[i].x, result, modp_outbuf.result[i].p, p, core);
           if (invresult != modp_outbuf.result[i].r) printf("Bad r: r=%d should be %d p=%d/%d (core %d)\n", modp_outbuf.result[i].r, invresult, modp_outbuf.result[i].p, p, core);
 #else
           unsigned invresult = modp_outbuf.result[i].r;
@@ -531,7 +535,7 @@ static void initSieve()
           unsigned qinv2 = qinv << 1;
           if (qinv2 >= p) qinv2 -= p;
 
-          if (qinv2 != modp_outbuf.result[i].twoqinv) printf("Bad q: q=%d should be %d p=%d\n", modp_outbuf.result[i].twoqinv, qinv2, p);
+          if (qinv2 != modp_outbuf.result[i].twoqinv) printf("Bad qinv2: %d should be %d p=%d\n", modp_outbuf.result[i].twoqinv, qinv2, p);
 #else
           unsigned qinv2 = modp_outbuf.result[i].twoqinv;
 #endif
