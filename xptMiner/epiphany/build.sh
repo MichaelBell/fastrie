@@ -29,9 +29,9 @@ esac
 #${CROSS_PREFIX}gcc -O3 -std=gnu99 src/modptest.c -o bin/modptest.elf -I ${EINCS} -L ${ELIBS} -le-hal  -lm -lpthread -DP_TO_TEST=${P_TO_TEST}
 
 # Build DEVICE side program
-e-gcc -O3 -g -T ${ELDF} -std=gnu99 src/e_modp.c -o bin/e_modp.elf -le-lib -lm -ffast-math -Wall -mfp-mode=int -DNO_RESULT_DEBUG
-e-gcc -O3 -S -T ${ELDF} -std=gnu99 src/e_modp.c -o bin/e_modp.s -le-lib -lm -ffast-math -mfp-mode=int -DNO_RESULT_DEBUG
-e-gcc -O3 -g -T ${ELDF} -std=gnu99 src/e_primetest.c -o bin/e_primetest.elf -le-lib -lm -ffast-math -Wall -mfp-mode=int -DNO_RESULT_DEBUG -fno-tree-loop-distribute-patterns
+e-gcc -O3 -g -T ${ELDF} -std=gnu99 src/e_modp.c -o bin/e_modp.elf -le-lib -lm -ffast-math -Wall -mfp-mode=int
+e-gcc -O3 -S -T ${ELDF} -std=gnu99 src/e_modp.c -o bin/e_modp.s -le-lib -lm -ffast-math -mfp-mode=int
+e-gcc -O3 -g -T ${ELDF} -std=gnu99 src/e_primetest.c -o bin/e_primetest.elf -le-lib -lm -ffast-math -Wall -mfp-mode=int -fno-tree-loop-distribute-patterns
 e-gcc -O3 -S -T ${ELDF} -std=gnu99 src/e_primetest.c -o bin/e_primetest.s -le-lib -lm -ffast-math -mfp-mode=int -fno-tree-loop-distribute-patterns
 
 # Convert ebinary to SREC file

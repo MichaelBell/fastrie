@@ -873,7 +873,7 @@ int main()
   e_coords_from_coreid(coreid, &row, &col);
   core = row * 4 + col;
 
-  ptest_indata_t* in = (ptest_indata_t*)(0x8f000000+(0x00020000*core));
+  ptest_indata_t* in = (ptest_indata_t*)(0x8f000000+(SHARED_MEM_PER_CORE*core));
   ptest_outdata_t* out = (ptest_outdata_t*)((char*)in + sizeof(ptest_indata_t));
 
   // Must set up a null interrupt routine to allow host to wake us from idle

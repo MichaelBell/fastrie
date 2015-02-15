@@ -82,8 +82,8 @@ all: xptminer$(EXTENSION) xptMiner/test epiphany/bin/e_primetest.elf
 xptMiner/%.o: xptMiner/%.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCLUDEPATHS) $< -o $@ 
 
-xptMiner/%.o: xptMiner/%.c
-	$(CC) -c $(CFLAGS) $(INCLUDEPATHS) $< -o $@ 
+xptMiner/rh_riecoin.o: xptMiner/rh_riecoin.c epiphany/src/common.h epiphany/src/ptest_data.h epiphany/src/modp_data.h
+	$(CC) -c $(CFLAGS) $(INCLUDEPATHS) xptMiner/rh_riecoin.c -o $@ 
 
 xptminer$(EXTENSION): $(OBJS:xptMiner/%=xptMiner/%) $(JHLIB:xptMiner/jhlib/%=xptMiner/jhlib/%)
 	$(CXX) $(CFLAGS) $(LIBPATHS) $(INCLUDEPATHS) $(STATIC) -o $@ $^ $(LIBS) -flto

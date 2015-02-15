@@ -1,5 +1,8 @@
 #pragma once
 
+//#define MODP_RESULT_DEBUG
+#define SHARED_MEM_PER_CORE 0x30000
+
 #define FIXED_MP_NUM_LEN 126
 #ifndef __GMP_H__
 typedef unsigned mp_limb_t;

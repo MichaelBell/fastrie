@@ -33,8 +33,6 @@
 #define MAX_SIEVE_PRIME  979270213 // Should be just < multiple of MODP_E_SIEVE_SIZE<<5 + prime[LOW_PRIME_INDEX]
 #define PRIME_TABLE_SIZE 49846420  // Not including 2.
 #define LOW_PRIME_IDX    3372
-//#define MAX_SIEVE_PRIME  373839797 // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
-//#define PRIME_TABLE_SIZE 20012797  // Not including 2.
 //#define MAX_SIEVE_PRIME  162529309  // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
 //#define PRIME_TABLE_SIZE 9108221  // Not including 2.
 //#define LOW_PRIME_IDX    2506
@@ -66,7 +64,7 @@ static mpz_t base, hashnum, primorial, xPlus16057;
 static e_platform_t epip_platform;
 static e_epiphany_t epip_dev;
 static e_mem_t epip_mem;
-#define EPIP_OFFSET(CORE)  ((CORE)*0x20000)
+#define EPIP_OFFSET(CORE)  ((CORE)*SHARED_MEM_PER_CORE)
 #define EPIP_MODP_IN_OFFSET(CORE)  EPIP_OFFSET(CORE)
 #define EPIP_MODP_OUT_OFFSET(CORE, BUF) (EPIP_OFFSET(CORE) + sizeof(modp_indata_t) + (BUF)*sizeof(modp_outdata_t))
 #define EPIP_PTEST_IN_OFFSET(CORE)  EPIP_OFFSET(CORE)
@@ -78,7 +76,8 @@ static volatile unsigned cancelEverything;
 static volatile unsigned lowSieveDone;
 static pthread_t test_tid[2];
 
-#define SIEVE_BLOCK_SIZE 240000
+#define SIEVE_BLOCK_SIZE 80000
+#define START_BLOCK 5
 static volatile unsigned nextSieveIdx;
 
 // return t such that at = 1 mod m
@@ -130,7 +129,7 @@ void rh_oneTimeInit(reportSuccess_t _reportSuccess, checkRestart_t _checkRestart
 
   // Allocate a buffer in shared external memory
   // for message passing from eCore to host.
-  e_alloc(&epip_mem, 0x01000000, 16*0x20000);
+  e_alloc(&epip_mem, 0x01000000, 16*SHARED_MEM_PER_CORE);
 
   // Open a workgroup
   e_open(&epip_dev, 0, 0, epip_platform.rows, epip_platform.cols);
@@ -370,7 +369,7 @@ static void initSieve()
 
   memset(sieve, 0, SIEVE_SIZE>>3);
   memset(sieveHighPrime, 0, SIEVE_SIZE>>3);
-  nextSieveIdx = SIEVE_BLOCK_SIZE;
+  nextSieveIdx = START_BLOCK*SIEVE_BLOCK_SIZE;
 
   mpz_fdiv_r(xPlus16057, base, primorial);     // Actually b mod q#
   mpz_sub(xPlus16057, primorial, xPlus16057);  // Now x
@@ -463,7 +462,7 @@ static void initSieve()
     if (lowSieveDone)
     {
       //fprintf(stderr, "T");
-      for (; testi < SIEVE_BLOCK_SIZE; ++testi)
+      for (; testi < START_BLOCK*SIEVE_BLOCK_SIZE; ++testi)
       {
         if (((sieve[testi>>5] & (1<<(testi&0x1f))) == 0) &&
             ((sieveHighPrime[testi>>5] & (1<<(testi&0x1f))) == 0))
@@ -506,7 +505,9 @@ static void initSieve()
         status = 0;
         e_write(&epip_mem, 0, 0, EPIP_MODP_OUT_OFFSET(core,buf), &status, sizeof(unsigned));
         e_start(&epip_dev, core>>2, core&3);
-        //printf("Read from core %d buf %d firstp=%d\n", core, buf, modp_outbuf.result[0].p);
+#ifdef MODP_RESULT_DEBUG
+        printf("Read from core %d buf %d firstp=%d\n", core, buf, modp_outbuf.result[0].p);
+#endif
  
         unsigned endj = corej[core] + modp_outbuf.num_results;
         for (i = 0; corej[core] < endj; ++i, ++corej[core])
@@ -606,7 +607,7 @@ static void initSieve()
   end = tv.tv_sec + (tv.tv_nsec / 1000000000.0);
   printf("Sieved in %.3f\n", end - start);
 
-  for (; testi < SIEVE_BLOCK_SIZE; ++testi)
+  for (; testi < START_BLOCK*SIEVE_BLOCK_SIZE; ++testi)
   {
     if (((sieve[testi>>5] & (1<<(testi&0x1f))) == 0) &&
         ((sieveHighPrime[testi>>5] & (1<<(testi&0x1f))) == 0))

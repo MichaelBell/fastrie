@@ -334,7 +334,7 @@ int main()
   e_coords_from_coreid(coreid, &row, &col);
   core = row * 4 + col;
 
-  modp_indata_t* in = (modp_indata_t*)(0x8f000000+(0x00020000*core));
+  modp_indata_t* in = (modp_indata_t*)(0x8f000000+(SHARED_MEM_PER_CORE*core));
   modp_outdata_t* outbufs[2];
   outbufs[0] = (modp_outdata_t*)((char*)in + sizeof(modp_indata_t));
   outbufs[1] = (modp_outdata_t*)((char*)outbufs[0] + sizeof(modp_outdata_t));
