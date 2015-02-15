@@ -104,7 +104,7 @@ mp_limb_t primorial[Q_LEN] = { 3990313926u, 1301064672u, 203676164u, 3309914335u
 
 // Divide algorithm modified version of the builtin udivsi3
 // original source: libgcc/config/epiphany/udivsi3-float.c
-unsigned int
+static unsigned int
 udiv (unsigned int a, unsigned int b)
 {
   unsigned int d, t, s0, s1, r0, r1;
@@ -334,7 +334,32 @@ mpn_div_r_1_preinv_ns(mp_srcptr np, mp_size_t nn,
   di = inv->di;
   while (nn-- > 0)
     {
-      gmp_udiv_rnnd_preinv (r, r, np[nn], d, di);
+      mp_limb_t qh, ql, x0, x1, x2, x3;
+	  unsigned ul, vl, uh, vh;
+	  
+	  ul = r & GMP_LLIMB_MASK;
+	  uh = r >> (GMP_LIMB_BITS / 2);
+	  vl = di & GMP_LLIMB_MASK;
+	  vh = di >> (GMP_LIMB_BITS / 2);
+	  
+	  x0 = (mp_limb_t) ul * vl;
+	  x1 = (mp_limb_t) ul * vh;
+	  x2 = (mp_limb_t) uh * vl;
+	  x3 = (mp_limb_t) uh * vh;
+	  
+	  x1 += x0 >> (GMP_LIMB_BITS / 2);/* this can't give carry */
+	  x1 += x2;               /* but this indeed can */
+	  if (x1 < x2) x3 += GMP_HLIMB_BIT;
+	  
+	  qh = x3 + (x1 >> (GMP_LIMB_BITS / 2));
+	  ql = (x1 << (GMP_LIMB_BITS / 2)) + (x0 & GMP_LLIMB_MASK);
+	  
+	  x0 = ql + np[nn];
+	  qh = qh + r + 1 + (x0 < ql);
+
+      r = np[nn] - qh * d;
+      if (r > x0) r += d;
+      if (r >= d) r -= d;
     }
 
   return r >> inv->shift;
@@ -355,16 +380,62 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
   di1 = inv1->di;
   d2 = inv2->d1;
   di2 = inv2->di;
+
+  unsigned vl1, vh1, vl2, vh2;
+  vl1 = di1 & GMP_LLIMB_MASK;
+  vh1 = di1 >> (GMP_LIMB_BITS / 2);
+    vl2 = di2 & GMP_LLIMB_MASK;
+    vh2 = di2 >> (GMP_LIMB_BITS / 2);
+
   while (nn-- > 0)
     {
-      gmp_udiv_rnnd_preinv (r1, r1, np[nn], d1, di1);
-      gmp_udiv_rnnd_preinv (r2, r2, np[nn], d2, di2);
+      mp_limb_t qh1, ql1, x0, x1, x2, x3;
+	  unsigned ul1, uh1;
+      mp_limb_t qh2, ql2, x4, x5, x6, x7;
+	  unsigned ul2, uh2;
+	  
+	  ul1 = r1 & GMP_LLIMB_MASK;
+	  uh1 = r1 >> (GMP_LIMB_BITS / 2);
+	    ul2 = r2 & GMP_LLIMB_MASK;
+	    uh2 = r2 >> (GMP_LIMB_BITS / 2);
+	  
+	  x0 = (mp_limb_t) ul1 * vl1;
+	  x1 = (mp_limb_t) ul1 * vh1;
+	  x2 = (mp_limb_t) uh1 * vl1;
+	  x3 = (mp_limb_t) uh1 * vh1;
+	    x4 = (mp_limb_t) ul2 * vl2;
+	    x5 = (mp_limb_t) ul2 * vh2;
+	    x6 = (mp_limb_t) uh2 * vl2;
+	    x7 = (mp_limb_t) uh2 * vh2;
+	  
+	  x1 += x0 >> (GMP_LIMB_BITS / 2);/* this can't give carry */
+	  x1 += x2;               /* but this indeed can */
+	  if (x1 < x2) x3 += GMP_HLIMB_BIT;
+	    x5 += x4 >> (GMP_LIMB_BITS / 2);/* this can't give carry */
+	    x5 += x6;               /* but this indeed can */
+	    if (x5 < x6) x7 += GMP_HLIMB_BIT;
+	  
+	  qh1 = x3 + (x1 >> (GMP_LIMB_BITS / 2));
+	  ql1 = (x1 << (GMP_LIMB_BITS / 2)) + (x0 & GMP_LLIMB_MASK);
+	    qh2 = x7 + (x5 >> (GMP_LIMB_BITS / 2));
+	    ql2 = (x5 << (GMP_LIMB_BITS / 2)) + (x4 & GMP_LLIMB_MASK);
+	  
+	  x0 = ql1 + np[nn];
+	  qh1 = qh1 + r1 + 1 + (x0 < ql1);
+	    x4 = ql2 + np[nn];
+	    qh2 = qh2 + r2 + 1 + (x4 < ql2);
+
+      r1 = np[nn] - qh1 * d1;
+      if (r1 > x0) r1 += d1;
+        r2 = np[nn] - qh2 * d2;
+        if (r2 > x4) r2 += d2;
+      if (r1 >= d1) r1 -= d1;
+        if (r2 >= d2) r2 -= d2;
     }
 
   *rp1 = r1 >> inv1->shift;
-  *rp2 = r2 >> inv2->shift;
+  *rp2 = r2 >> inv1->shift;
 }
-
 	  
 static void
 mpn_div_qr_1_invert (struct gmp_div_inverse *inv, mp_limb_t d)
