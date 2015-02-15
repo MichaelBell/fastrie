@@ -28,12 +28,25 @@ mp_limb_t primorial[Q_LEN] = { 3990313926u, 1301064672u, 203676164u, 3309914335u
 #define GMP_HLIMB_BIT ((mp_limb_t) 1 << (GMP_LIMB_BITS / 2))
 #define GMP_LLIMB_MASK (GMP_HLIMB_BIT - 1)
 
-#define gmp_clz(count, x) do {                                          \
-    unsigned __clz_x = (x);                                             \
-    union {unsigned asInt; float asFloat;} _u;                          \
-    __clz_x &= ~(__clz_x >> 1);                                         \
-    _u.asFloat = (float)__clz_x + 0.5f;                                 \
-    (count) = 158 - (_u.asInt >> 23);                                   \
+#define gmp_clz(count, xx) do {                                         \
+    unsigned config = 0x1;                                              \
+    unsigned _x = (xx);                                                 \
+    unsigned half = 0x3f000000;                                         \
+    unsigned _res;                                                      \
+    __asm__ __volatile__ (                                              \
+      "movts config, %[config]\n\t"                                     \
+      "nop\n\t"                                                         \
+      "float %[x], %[x]\n\t"                                            \
+      "lsl %[config], %[config], #19\n\t"                               \
+      "fadd %[x], %[x], %[half]\n\t"                                    \
+      "mov %[res], #158\n\t"                                            \
+      "lsr %[x], %[x], #23\n\t"                                         \
+      "sub %[res], %[res], %[x]\n\t"                                    \
+      "movts config, %[config]" :                                       \
+      [res] "=r" (_res),                                                \
+      [config] "+r" (config), [x] "+r" (_x) :                           \
+      [half] "r" (half));                                               \
+    (count) = _res;                                                     \
   } while (0)
 
 #define gmp_add_ssaaaa(sh, sl, ah, al, bh, bl) \
@@ -89,6 +102,115 @@ mp_limb_t primorial[Q_LEN] = { 3990313926u, 1301064672u, 203676164u, 3309914335u
 
 #define mpn_invert_limb(x) mpn_invert_3by2 ((x), 0)
 
+// Divide algorithm modified version of the builtin udivsi3
+// original source: libgcc/config/epiphany/udivsi3-float.c
+unsigned int
+udiv (unsigned int a, unsigned int b)
+{
+  unsigned int d, t, s0, s1, r0, r1;
+
+  if (b > a)
+    return 0;
+  if (b & 0x80000000)
+    return 1;
+
+  /* Assuming B is nonzero, compute S0 such that 0 <= S0,
+     (B << S0+1) does not overflow,
+     A < 4.01 * (B << S0), with S0 chosen as small as possible
+     without taking to much time calculating.  */
+#if 1
+  {
+    unsigned config = 0x1;
+    unsigned half = 0x3f000000;
+    unsigned allbits = 32;
+    unsigned tmp;
+    asm volatile (
+      "movts config, %[config]\n\t"
+      "nop\n\t"
+      "float %[s0], %[a]\n\t"
+      "float %[s1], %[b]\n\t"
+      "lsl %[config], %[config], #19\n\t"
+      "lsr %[s0], %[s0], #23\n\t"
+      "lsr %[s1], %[s1], #23\n\t"
+      "movts config, %[config]\n\t"
+      "sub %[s0], %[s0], #126\n\t"
+      "  isub %[config], %[config], %[config]\n\t"
+      "sub %[s1], %[s1], #125\n\t"
+      "sub %[tmp], %[a], #0\n\t"
+      "movlt %[s0], %[allbits]\n\t"
+      "sub %[s0], %[s0], %[s1]\n\t"
+      "movlt %[s0], %[config]\n\t" :
+      [config] "+r" (config), [s0] "=r" (s0), [s1] "=r" (s1), [tmp] "=r" (tmp) :
+      [half] "r" (half), [allbits] "r" (allbits), [a] "r" (a), [b] "r" (b));
+  }
+#else
+  gmp_clz(s0, a);
+  gmp_clz(s1, b);
+  s0 = 32 - s0;
+  s1 = (32 - s1) + 1;
+  if (s0 < s1) s0 = 0;
+  else s0 -= s1;
+#endif
+
+  b <<= s0;
+  r1 = 0;
+
+  r0 = 1 << s0;
+  a = ((t=a) - b);
+  if (a <= t)
+    {
+      r1 += r0;
+      a = ((t=a) - b);
+      if (a <= t)
+      do {
+        r1 += r0;
+        a = ((t=a) - b);
+      } while (a <= t);
+    }
+  a += b;
+  d = b - 1;
+
+#define STEP(n) case n: a += a; t = a - d; if (t <= a) a = t;
+  switch (s0)
+    {
+    STEP (31)
+    STEP (30)
+    STEP (29)
+    STEP (28)
+    STEP (27)
+    STEP (26)
+    STEP (25)
+    STEP (24)
+    STEP (23)
+    STEP (22)
+    STEP (21)
+    STEP (20)
+    STEP (19)
+    STEP (18)
+    STEP (17)
+    STEP (16)
+    STEP (15)
+    STEP (14)
+    STEP (13)
+    STEP (12)
+    STEP (11)
+    STEP (10)
+    STEP (9)
+    STEP (8)
+    STEP (7)
+    STEP (6)
+    STEP (5)
+    STEP (4)
+    STEP (3)
+    STEP (2)
+    STEP (1)
+    case 0: ;
+    }
+#undef STEP
+  r0 = r1 | ((r0-1) & a);
+  return r0;
+}
+
 static mp_limb_t
 mpn_invert_3by2 (mp_limb_t u1, mp_limb_t u0)
 {
@@ -104,7 +226,7 @@ mpn_invert_3by2 (mp_limb_t u1, mp_limb_t u0)
   ul = u1 & GMP_LLIMB_MASK;
   uh = u1 >> (GMP_LIMB_BITS / 2);
 
-  qh = ~u1 / uh;
+  qh = udiv(~u1, uh);
   r = ((~u1 - (mp_limb_t) qh * uh) << (GMP_LIMB_BITS / 2)) | GMP_LLIMB_MASK;
 
   p = (mp_limb_t) qh * ul;
@@ -259,6 +381,8 @@ mpn_div_qr_1_invert (struct gmp_div_inverse *inv, mp_limb_t d)
 
 // return t such that at = 1 mod b
 // a, b < 2^31.
+// Algorithm from http://www.ucl.ac.uk/~ucahcjm/combopt/ext_gcd_python_programs.pdf
+// with modification to keep s, t in bounds.
 static unsigned int inverse(unsigned int a, unsigned int b)
 {
   int alpha, beta;
@@ -318,11 +442,27 @@ static unsigned int inverse(unsigned int a, unsigned int b)
       b = b - a;
       s = s - u;
       t = t - v;
+
+      // Fix up to avoid out of range s,t
+      if (u > 0)
+      {
+        if (s <= -beta)
+        {
+          s += beta;
+          t -= alpha;
+        }
+      }
+      else
+      {
+        if (s >= beta)
+        {
+          s -= beta;
+          t += alpha;
+        }
+      }
     }
   }
-  if (a > 1) return 0;
-  while (s < 0) s += beta;
-  while (s >= beta) s -= beta;
+  if (s < 0) s += beta;
   return s;
 }
 
@@ -453,6 +593,8 @@ int main()
               result2.p = p[1];
               result1.q = q1;
               result2.q = q2;
+              result1.x = result1.r;
+              result2.x = result2.r;
 #endif
               q1 = inverse(q1, p[0]);
               q2 = inverse(q2, p[1]);
@@ -477,6 +619,7 @@ int main()
 #ifdef MODP_RESULT_DEBUG
               result.p = p[0];
               result.q = q;
+              result.x = result.r;
 #endif
               q = inverse(q, p[0]);
               result.r = mulmod(result.r, q, &inv1);
@@ -507,6 +650,7 @@ int main()
 #ifdef MODP_RESULT_DEBUG
         result.p = p[0];
         result.q = q;
+        result.x = result.r;
 #endif
         q = inverse(q, p[0]);
         result.r = mulmod(result.r, q, &inv);
