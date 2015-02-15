@@ -218,6 +218,31 @@ mpn_div_r_1_preinv_ns(mp_srcptr np, mp_size_t nn,
   return r >> inv->shift;
 }
 
+static void
+mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
+                        mp_srcptr np, mp_size_t nn,
+                        const struct gmp_div_inverse *inv1,
+                        const struct gmp_div_inverse *inv2)
+{
+  mp_limb_t d1, di1, d2, di2;
+  mp_limb_t r1 = 0, r2 = 0;
+
+  assert(inv1->shift == inv2->shift);
+
+  d1 = inv1->d1;
+  di1 = inv1->di;
+  d2 = inv2->d1;
+  di2 = inv2->di;
+  while (nn-- > 0)
+    {
+      gmp_udiv_rnnd_preinv (r1, r1, np[nn], d1, di1);
+      gmp_udiv_rnnd_preinv (r2, r2, np[nn], d2, di2);
+    }
+
+  *rp1 = r1 >> inv1->shift;
+  *rp2 = r2 >> inv2->shift;
+}
+
 	  
 static void
 mpn_div_qr_1_invert (struct gmp_div_inverse *inv, mp_limb_t d)
@@ -326,6 +351,29 @@ static unsigned mulmod(mp_limb_t a, mp_limb_t b, struct gmp_div_inverse* inv)
 
 void null_isr(int);
 
+static void doshift(mp_ptr nshifted, mp_size_t* nshiftedn, 
+                    mp_ptr qshifted, mp_size_t* qshiftedn, unsigned shift)
+{
+              mp_limb_t h;
+              h = mpn_lshift(nshifted, inbuf.n, inbuf.nn, shift);
+              if (h) 
+              {
+                nshifted[inbuf.nn] = h;
+                *nshiftedn = inbuf.nn + 1;
+              }
+              else
+                *nshiftedn = inbuf.nn;
+
+              h = mpn_lshift(qshifted, primorial, Q_LEN, shift);
+              if (h) 
+              {
+                qshifted[Q_LEN] = h;
+                *qshiftedn = Q_LEN + 1;
+              }
+              else
+                *qshiftedn = Q_LEN;
+}
+
 int main()
 {
   e_coreid_t coreid;
@@ -375,53 +423,99 @@ int main()
       // Writing
       out->results_status = 1;
       num_results = 0;
-      for (; i < MODP_E_SIEVE_SIZE && num_results < MODP_RESULTS_PER_PAGE; ++i)
+      mp_limb_t p[2];
+      unsigned pidx = 0;
+      for (; i < MODP_E_SIEVE_SIZE && num_results + pidx < MODP_RESULTS_PER_PAGE; ++i)
       {
         if ((inbuf.sieve[i>>5] & (1<<(i&0x1f))) == 0)
         {
-          mp_limb_t p = inbuf.pbase + (i<<1);
-          struct gmp_div_inverse inv;
-          mpn_div_qr_1_invert (&inv, p);
-
-          if (inv.shift != lastshift)
+          p[pidx++] = inbuf.pbase + (i<<1);
+          if (pidx == 2)
           {
-            mp_limb_t h;
-            h = mpn_lshift(nshifted, inbuf.n, inbuf.nn, inv.shift);
-            if (h) 
+            struct gmp_div_inverse inv1, inv2;
+            mpn_div_qr_1_invert (&inv1, p[0]);
+            mpn_div_qr_1_invert (&inv2, p[1]);
+
+            if (inv1.shift != lastshift)
             {
-              nshifted[inbuf.nn] = h;
-              nshiftedn = inbuf.nn + 1;
+              doshift(nshifted, &nshiftedn, qshifted, &qshiftedn, inv1.shift);
+              lastshift = inv1.shift;
             }
-            else
-              nshiftedn = inbuf.nn;
 
-            h = mpn_lshift(qshifted, primorial, Q_LEN, inv.shift);
-            if (h) 
+            if (inv1.shift == inv2.shift)
             {
-              qshifted[Q_LEN] = h;
-              qshiftedn = Q_LEN + 1;
-            }
-            else
-              qshiftedn = Q_LEN;
-
-            lastshift = inv.shift;
-          }
-
-          modp_result_t result;
-          result.r = mpn_div_r_1_preinv_ns(nshifted, nshiftedn, &inv);
-          mp_limb_t q = mpn_div_r_1_preinv_ns(qshifted, qshiftedn, &inv);
+              modp_result_t result1, result2;
+              mpn_div_r_1_preinv_ns_2(&result1.r, &result2.r, nshifted, nshiftedn, &inv1, &inv2);
+              mp_limb_t q1, q2;
+              mpn_div_r_1_preinv_ns_2(&q1, &q2, qshifted, qshiftedn, &inv1, &inv2);
 #ifdef MODP_RESULT_DEBUG
-          result.p = p;
-          result.q = q;
+              result1.p = p[0];
+              result2.p = p[1];
+              result1.q = q1;
+              result2.q = q2;
 #endif
-          q = inverse(q, p);
-          result.r = mulmod(result.r, q, &inv);
-          q <<= 1;
-          if (q >= p) q -= p;
-          result.twoqinv = q;
-          out->result[num_results++] = result;
+              q1 = inverse(q1, p[0]);
+              q2 = inverse(q2, p[1]);
+              result1.r = mulmod(result1.r, q1, &inv1);
+              result2.r = mulmod(result2.r, q2, &inv2);
+              q1 <<= 1;
+              if (q1 >= p[0]) q1 -= p[0];
+              q2 <<= 1;
+              if (q2 >= p[1]) q2 -= p[1];
+              result1.twoqinv = q1;
+              result2.twoqinv = q2;
+              out->result[num_results++] = result1;
+              out->result[num_results++] = result2;
+
+              pidx = 0;
+            }
+            else
+            {
+              modp_result_t result;
+              result.r = mpn_div_r_1_preinv_ns(nshifted, nshiftedn, &inv1);
+              mp_limb_t q = mpn_div_r_1_preinv_ns(qshifted, qshiftedn, &inv1);
+#ifdef MODP_RESULT_DEBUG
+              result.p = p[0];
+              result.q = q;
+#endif
+              q = inverse(q, p[0]);
+              result.r = mulmod(result.r, q, &inv1);
+              q <<= 1;
+              if (q >= p[0]) q -= p[0];
+              result.twoqinv = q;
+              out->result[num_results++] = result;
+
+              p[0] = p[1];
+              pidx = 1;
+            }
+          }
         }
       }
+
+      if (pidx == 1)
+      {
+        struct gmp_div_inverse inv;
+        mpn_div_qr_1_invert (&inv, p[0]);
+        if (lastshift != inv.shift)
+        {
+          doshift(nshifted, &nshiftedn, qshifted, &qshiftedn, inv.shift);
+          lastshift = inv.shift;
+        }
+        modp_result_t result;
+        result.r = mpn_div_r_1_preinv_ns(nshifted, nshiftedn, &inv);
+        mp_limb_t q = mpn_div_r_1_preinv_ns(qshifted, qshiftedn, &inv);
+#ifdef MODP_RESULT_DEBUG
+        result.p = p[0];
+        result.q = q;
+#endif
+        q = inverse(q, p[0]);
+        result.r = mulmod(result.r, q, &inv);
+        q <<= 1;
+        if (q >= p[0]) q -= p[0];
+        result.twoqinv = q;
+        out->result[num_results++] = result;
+      }
+
       out->num_results = num_results;
       out->results_status = 2;
     } while(num_results == MODP_RESULTS_PER_PAGE);
