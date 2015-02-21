@@ -62,7 +62,7 @@ udiv (unsigned int a, unsigned int b)
 {
   unsigned int d, t, s0, s1, r0, r1;
 
-  if (b > a)
+  if (a < b)
     return 0;
   if (b & 0x80000000)
     return 1;
@@ -74,36 +74,44 @@ udiv (unsigned int a, unsigned int b)
 #if 1
   {
     unsigned config = 0x1;
-    unsigned half = 0x3f000000;
-    unsigned allbits = 32;
-    unsigned tmp;
     asm volatile (
       "movts config, %[config]\n\t"
-      "nop\n\t"
-      "float %[s0], %[a]\n\t"
-      "float %[s1], %[b]\n\t"
+      "mov %[r0], #1\n\t"
+      "  float %[s0], %[a]\n\t"
       "movt %[config], #8\n\t"
+      "  float %[s1], %[b]\n\t"
+      "mov %[d], #1\n\t"
       "lsr %[s0], %[s0], #23\n\t"
       "lsr %[s1], %[s1], #23\n\t"
       "movts config, %[config]\n\t"
-      "sub %[s0], %[s0], #126\n\t"
-      "  isub %[config], %[config], %[config]\n\t"
-      "sub %[s1], %[s1], #125\n\t"
-      "sub %[tmp], %[a], #0\n\t"
-      "movlt %[s0], %[allbits]\n\t"
+      "sub %[s0], %[s0], #1\n\t"
+      "  isub %[r1], %[config], %[config]\n\t"
       "sub %[s0], %[s0], %[s1]\n\t"
-      "movlt %[s0], %[config]\n\t" :
-      [config] "+r" (config), [s0] "=r" (s0), [s1] "=r" (s1), [tmp] "=r" (tmp) :
-      [half] "r" (half), [allbits] "r" (allbits), [a] "r" (a), [b] "r" (b));
+      "lsl %[b], %[b], %[s0]\n\t"
+      "lsl %[r0], %[r0], %[s0]\n\t"
+      "sub %[s1], %[a], %[b]\n\t"
+      "  isub %[d], %[b], %[d]\n\t"
+      "bltu .aina%=\n\t" 
+      "sub %[a], %[s1], %[b]\n\t"
+      "  iadd %[r1], %[r1], %[r0]\n\t"
+      "bltu .ains1%=\n\t" 
+      "lsl %[r1], %[r0], #1\n\t"
+      "sub %[s1], %[a], %[b]\n\t"
+      "bltu .aina%=\n\t" 
+      "  iadd %[r1], %[r1], %[r0]\n"
+  ".ains1%=:\tmov %[a], %[s1]\n"
+  ".aina%=:\t\n\t"
+      
+ :
+      [config] "+r" (config), [s0] "=r" (s0), [s1] "=r" (s1), [d] "=r" (d),
+      [a] "+r" (a), [b] "+r" (b), [r0] "=r" (r0), [r1] "=r" (r1));
   }
 #else
   gmp_clz(s0, a);
   gmp_clz(s1, b);
   s0 = 32 - s0;
   s1 = (32 - s1) + 1;
-  if (s0 < s1) s0 = 0;
-  else s0 -= s1;
-#endif
+  s0 -= s1;
 
   b <<= s0;
   r1 = 0;
@@ -115,18 +123,23 @@ udiv (unsigned int a, unsigned int b)
       r1 += r0;
       a = ((t=a) - b);
       if (a <= t)
-      do {
+      {
         r1 += r0;
         a = ((t=a) - b);
-      } while (a <= t);
+        if (a <= t)
+        {
+          r1 += r0;
+          a = ((t=a) - b);
+        }
+      }
     }
   a += b;
   d = b - 1;
+#endif
 
 #define STEP(n) case n: a += a; t = a - d; if (t <= a) a = t;
   switch (s0)
     {
-    STEP (31)
     STEP (30)
     STEP (29)
     STEP (28)

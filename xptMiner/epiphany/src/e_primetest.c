@@ -108,8 +108,6 @@ const unsigned char  binvert_limb_table[128] = {
       }                                                                 \
   } while (0)
 
-#define mpn_invert_limb(x) mpn_invert_3by2 ((x), 0)
-
 #if 0
 static mp_size_t
 mpn_normalized_size (mp_srcptr xp, mp_size_t n)
