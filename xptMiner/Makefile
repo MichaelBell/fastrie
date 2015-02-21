@@ -91,7 +91,7 @@ xptminer$(EXTENSION): $(OBJS:xptMiner/%=xptMiner/%) $(JHLIB:xptMiner/jhlib/%=xpt
 xptMiner/test: xptMiner/testharness.cpp xptMiner/riecoinMiner.o xptMiner/rh_riecoin.o xptMiner/sha2.o
 	cd xptMiner && ./buildtest.sh
 
-epiphany/bin/e_primetest.elf: epiphany/src/e_primetest.c epiphany/src/e_modp.c epiphany/src/common.h epiphany/src/ptest_data.h epiphany/src/modp_data.h
+epiphany/bin/e_primetest.elf: epiphany/src/e_primetest.c epiphany/src/e_modp.c epiphany/src/common.h epiphany/src/ptest_data.h epiphany/src/modp_data.h epiphany/src/e_common.c
 	cd epiphany && ./build.sh
 
 clean:

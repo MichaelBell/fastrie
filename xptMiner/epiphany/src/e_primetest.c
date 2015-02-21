@@ -3,30 +3,10 @@
 
 #include "ptest_data.h"
 
-struct gmp_div_inverse
-{
-  /* Normalization shift count. */
-  unsigned shift;
-  /* Normalized divisor (d0 unused for mpn_div_qr_1) */
-  mp_limb_t d1, d0;
-  /* Inverse, for 2/1 or 3/2. */
-  mp_limb_t di;
-};
+#include "e_common.c"
 
 static ptest_indata_t inbuf;
 static volatile unsigned wait_flag;
-
-#define Q_LEN 7
-mp_limb_t primorial[Q_LEN] = { 3990313926u, 1301064672u, 203676164u, 3309914335u, 2220064684u, 2929319840u, 153406374u };
-
-#define CHAR_BIT 8
-#define GMP_LIMB_BITS (sizeof(mp_limb_t) * CHAR_BIT)
-
-#define GMP_LIMB_MAX (~ (mp_limb_t) 0)
-#define GMP_LIMB_HIGHBIT ((mp_limb_t) 1 << (GMP_LIMB_BITS - 1))
-
-#define GMP_HLIMB_BIT ((mp_limb_t) 1 << (GMP_LIMB_BITS / 2))
-#define GMP_LLIMB_MASK (GMP_HLIMB_BIT - 1)
 
 #undef MPN_REDC_1
 #define MPN_REDC_1(rp, up, mp, n, invm)                                 \
@@ -70,21 +50,28 @@ const unsigned char  binvert_limb_table[128] = {
     (inv) = __inv;                                                      \
   } while (0)
 
-#define gmp_clz(count, x) do {                                          \
-    unsigned __clz_x = (x);                                             \
-    union {unsigned asInt; float asFloat;} _u;                          \
-    __clz_x &= ~(__clz_x >> 1);                                         \
-    _u.asFloat = (float)__clz_x + 0.5f;                                 \
-    (count) = 158 - (_u.asInt >> 23);                                   \
-  } while (0)
-
-#define gmp_add_ssaaaa(sh, sl, ah, al, bh, bl) \
-  do {                                                                  \
-    mp_limb_t __x;                                                      \
-    __x = (al) + (bl);                                                  \
-    (sh) = (ah) + (bh) + (__x < (al));                                  \
-    (sl) = __x;                                                         \
-  } while (0)
+#define gmp_clz(count, xx) do {                                         \
+  if (xx & 0x80000000) (count) = 0;                                     \
+  else {                                                                \
+    unsigned config = 0x1;                                              \
+    unsigned _x = (xx);                                                 \
+    unsigned half = 0x3f000000;                                         \
+    unsigned _res;                                                      \
+    __asm__ __volatile__ (                                              \
+      "movts config, %[config]\n\t"                                     \
+      "nop\n\t"                                                         \
+      "float %[x], %[x]\n\t"                                            \
+      "movt %[config], #8\n\t"                                          \
+      "fadd %[x], %[x], %[half]\n\t"                                    \
+      "mov %[res], #158\n\t"                                            \
+      "lsr %[x], %[x], #23\n\t"                                         \
+      "movts config, %[config]\n\t"                                     \
+      "sub %[res], %[res], %[x]\n\t" :                                  \
+      [res] "=r" (_res),                                                \
+      [config] "+r" (config), [x] "+r" (_x) :                           \
+      [half] "r" (half));                                               \
+    (count) = _res;                                                     \
+  }} while (0)
 
 #define gmp_sub_ddmmss(sh, sl, ah, al, bh, bl) \
   do {                                                                  \
@@ -92,31 +79,6 @@ const unsigned char  binvert_limb_table[128] = {
     __x = (al) - (bl);                                                  \
     (sh) = (ah) - (bh) - ((al) < (bl));                                 \
     (sl) = __x;                                                         \
-  } while (0)
-
-#define gmp_umul_ppmm(w1, w0, u, v)                                     \
-  do {                                                                  \
-    mp_limb_t __x0, __x1, __x2, __x3;                                   \
-    unsigned __ul, __vl, __uh, __vh;                                    \
-    mp_limb_t __u = (u), __v = (v);                                     \
-                                                                        \
-    __ul = __u & GMP_LLIMB_MASK;                                        \
-    __uh = __u >> (GMP_LIMB_BITS / 2);                                  \
-    __vl = __v & GMP_LLIMB_MASK;                                        \
-    __vh = __v >> (GMP_LIMB_BITS / 2);                                  \
-                                                                        \
-    __x0 = (mp_limb_t) __ul * __vl;                                     \
-    __x1 = (mp_limb_t) __ul * __vh;                                     \
-    __x2 = (mp_limb_t) __uh * __vl;                                     \
-    __x3 = (mp_limb_t) __uh * __vh;                                     \
-                                                                        \
-    __x1 += __x0 >> (GMP_LIMB_BITS / 2);/* this can't give carry */     \
-    __x1 += __x2;               /* but this indeed can */               \
-    if (__x1 < __x2)            /* did we get it? */                    \
-      __x3 += GMP_HLIMB_BIT;    /* yes, add it in the proper pos. */    \
-                                                                        \
-    (w1) = __x3 + (__x1 >> (GMP_LIMB_BITS / 2));                        \
-    (w0) = (__x1 << (GMP_LIMB_BITS / 2)) + (__x0 & GMP_LLIMB_MASK);     \
   } while (0)
 
 #define gmp_udiv_qr_3by2(q, r1, r0, n2, n1, n0, d1, d0, dinv)           \
@@ -257,85 +219,6 @@ mpn_add_n2 (mp_ptr rp, mp_srcptr ap, mp_size_t an, mp_srcptr bp, mp_size_t bn)
     }
 
   return cy;
-}
-
-static mp_limb_t
-mpn_invert_3by2 (mp_limb_t u1, mp_limb_t u0)
-{
-  mp_limb_t r, p, m;
-  unsigned ul, uh;
-  unsigned ql, qh;
-
-  /* First, do a 2/1 inverse. */
-  /* The inverse m is defined as floor( (B^2 - 1 - u1)/u1 ), so that 0 <
-   * B^2 - (B + m) u1 <= u1 */
-  assert (u1 >= GMP_LIMB_HIGHBIT);
-
-  ul = u1 & GMP_LLIMB_MASK;
-  uh = u1 >> (GMP_LIMB_BITS / 2);
-
-  qh = ~u1 / uh;
-  r = ((~u1 - (mp_limb_t) qh * uh) << (GMP_LIMB_BITS / 2)) | GMP_LLIMB_MASK;
-
-  p = (mp_limb_t) qh * ul;
-  /* Adjustment steps taken from udiv_qrnnd_c */
-  if (r < p)
-    {
-      qh--;
-      r += u1;
-      if (r >= u1) /* i.e. we didn't get carry when adding to r */
-        if (r < p)
-          {
-            qh--;
-            r += u1;
-          }
-    }
-  r -= p;
-
-  /* Do a 3/2 division (with half limb size) */
-  p = (r >> (GMP_LIMB_BITS / 2)) * qh + r;
-  ql = (p >> (GMP_LIMB_BITS / 2)) + 1;
-
-  /* By the 3/2 method, we don't need the high half limb. */
-  r = (r << (GMP_LIMB_BITS / 2)) + GMP_LLIMB_MASK - ql * u1;
-
-  if (r >= (p << (GMP_LIMB_BITS / 2)))
-    {
-      ql--;
-      r += u1;
-    }
-  m = ((mp_limb_t) qh << (GMP_LIMB_BITS / 2)) + ql;
-  if (r >= u1)
-    {
-      m++;
-      r -= u1;
-    }
-
-  if (u0 > 0)
-    {
-      mp_limb_t th, tl;
-      r = ~r;
-      r += u0;
-      if (r < u0)
-        {
-          m--;
-          if (r >= u1)
-            {
-              m--;
-              r -= u1;
-            }
-          r -= u1;
-        }
-      gmp_umul_ppmm (th, tl, u0, m);
-      r += th;
-      if (r < th)
-        {
-          m--;
-          m -= ((r > u1) | ((r == u1) & (tl > u0)));
-        }
-    }
-
-  return m;
 }
 
 static void
@@ -661,38 +544,6 @@ mpn_div_r_preinv_ns (mp_ptr np, mp_size_t nn,
 
       mpn_div_r_pi1 (np, nn, nh, dp, dn, inv->di);
     }
-}
-
-static mp_limb_t
-mpn_lshift (mp_ptr rp, mp_srcptr up, mp_size_t n, unsigned int cnt)
-{
-  mp_limb_t high_limb, low_limb;
-  unsigned int tnc, cntmul;
-  mp_size_t i;
-  mp_limb_t retval;
-
-  assert (n >= 1);
-  assert (cnt >= 1);
-  assert (cnt < GMP_LIMB_BITS);
-
-  up += n;
-  rp += n;
-
-  tnc = GMP_LIMB_BITS - cnt;
-  cntmul = 1<<cnt;
-  low_limb = *--up;
-  retval = low_limb >> tnc;
-  high_limb = (low_limb * cntmul);
-
-  for (i = n; --i != 0;)
-    {
-      low_limb = *--up;
-      *--rp = high_limb | (low_limb >> tnc);
-      high_limb = (low_limb * cntmul);
-    }
-  *--rp = high_limb;
-
-  return retval;
 }
 
 static mp_limb_t
