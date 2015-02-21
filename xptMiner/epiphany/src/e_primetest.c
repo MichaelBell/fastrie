@@ -371,7 +371,7 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
         str %[lpl2], [%[rp], %[halfnidx]] \n\
         str %[lpl], [%[rp]], #+1       \n\
 	  iadd %[cl2], %[cl2], %[clc]" :
-  OUTREG(lpl), OUTREG(lpl2),
+  TMP(lpl), TMP(lpl2),
   TMP(x1), TMP(x2), TMP(x3), TMP(x4), TMP(x5), TMP(x6), TMP(x7), 
   TMP(x1c), TMP(x5c), TMP(clc), TMP(clc2), TMP(clc3),
   REG(ul), REG(ul2), REG(cl), REG(cl2), REG(rp) :
@@ -381,6 +381,7 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 #undef REG
 #undef TMP
 #undef INREG
+#undef OUTREG
 #undef CNST
 
       n -= 2;
