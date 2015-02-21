@@ -118,48 +118,95 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
 
   while (nn-- > 0)
     {
+      unsigned lowmask = 0xffff;
+      unsigned one = 1;
+      unsigned halfbit = 0x10000;
+      unsigned npnn = np[nn];
+      unsigned x0c, x1c, x4c, x5c;
       mp_limb_t qh1, ql1, x0, x1, x2, x3;
-	  unsigned ul1, uh1;
       mp_limb_t qh2, ql2, x4, x5, x6, x7;
-	  unsigned ul2, uh2;
-	  
-	  ul1 = r1 & GMP_LLIMB_MASK;
-	  uh1 = r1 >> (GMP_LIMB_BITS / 2);
-	    ul2 = r2 & GMP_LLIMB_MASK;
-	    uh2 = r2 >> (GMP_LIMB_BITS / 2);
-	  
-	  x0 = (mp_limb_t) ul1 * vl1;
-	  x1 = (mp_limb_t) ul1 * vh1;
-	  x2 = (mp_limb_t) uh1 * vl1;
-	  x3 = (mp_limb_t) uh1 * vh1;
-	    x4 = (mp_limb_t) ul2 * vl2;
-	    x5 = (mp_limb_t) ul2 * vh2;
-	    x6 = (mp_limb_t) uh2 * vl2;
-	    x7 = (mp_limb_t) uh2 * vh2;
-	  
-	  x1 += x0 >> (GMP_LIMB_BITS / 2);/* this can't give carry */
-	  x1 += x2;               /* but this indeed can */
-	  if (x1 < x2) x3 += GMP_HLIMB_BIT;
-	    x5 += x4 >> (GMP_LIMB_BITS / 2);/* this can't give carry */
-	    x5 += x6;               /* but this indeed can */
-	    if (x5 < x6) x7 += GMP_HLIMB_BIT;
-	  
-	  qh1 = x3 + (x1 >> (GMP_LIMB_BITS / 2));
-	  ql1 = (x1 << (GMP_LIMB_BITS / 2)) + (x0 & GMP_LLIMB_MASK);
-	    qh2 = x7 + (x5 >> (GMP_LIMB_BITS / 2));
-	    ql2 = (x5 << (GMP_LIMB_BITS / 2)) + (x4 & GMP_LLIMB_MASK);
-	  
-	  x0 = ql1 + np[nn];
-	  qh1 = qh1 + r1 + 1 + (x0 < ql1);
-	    x4 = ql2 + np[nn];
-	    qh2 = qh2 + r2 + 1 + (x4 < ql2);
 
-      r1 = np[nn] - qh1 * d1;
-      if (r1 > x0) r1 += d1;
-        r2 = np[nn] - qh2 * d2;
-        if (r2 > x4) r2 += d2;
-      if (r1 >= d1) r1 -= d1;
-        if (r2 >= d2) r2 -= d2;
+#define REG(x) [x] "+r"(x)
+#define TMP(x) [x] "=r"(x)
+#define OUTREG(x) [x] "=r"(x)
+#define INREG(x) [x] "r"(x)
+#define CNST(x) [x] "r"(x)
+	  
+        asm volatile("\n\
+	and %[x1], %[r1], %[lowmask]    \n\
+	  isub %[x1c], %[lowmask], %[lowmask] \n\
+	lsr %[x3], %[r1], #16           \n\
+	  isub %[x5c], %[lowmask], %[lowmask] \n\
+	and %[x6], %[r2], %[lowmask]  \n\
+	  imul %[x0], %[x1], %[vl1]   \n\
+	lsr %[x7], %[r2], #16         \n\
+          imul %[x1], %[x1], %[vh1]     \n\
+	add %[r1], %[r1], #1  \n\
+          imul %[x4], %[x6], %[vl2]   \n\
+	add %[r2], %[r2], #1 \n\
+          imul %[x2], %[x3], %[vl1]     \n\
+	lsr %[x0c], %[x0], #16        \n\
+          imul %[x3], %[x3], %[vh1]     \n\
+	add %[x1], %[x1], %[x0c]      \n\
+          imul %[x5], %[x6], %[vh2]   \n\
+	and %[ql1], %[x0], %[lowmask] \n\
+          imul %[x6], %[x7], %[vl2]   \n\
+	lsr %[x4c], %[x4], #16        \n\
+          imul %[x7], %[x7], %[vh2]   \n\
+	add %[x1], %[x1], %[x2]       \n\
+	  isub %[x0c], %[lowmask], %[lowmask]  \n\
+	movgteu %[x1c], %[halfbit]    \n\
+	add %[x5], %[x5], %[x4c]      \n\
+	  imadd %[ql1], %[x1], %[halfbit]  \n\
+	and %[ql2], %[x4], %[lowmask]  \n\
+	  iadd %[x3], %[x3], %[x1c]  \n\
+	lsr %[qh1], %[x1], #16  \n\
+	  isub %[x4c], %[lowmask], %[lowmask]  \n\
+	add %[x5], %[x5], %[x6]   \n\
+	movgteu %[x5c], %[halfbit]  \n\
+	add %[qh1], %[qh1], %[x3]  \n\
+	lsr %[qh2], %[x5], #16  \n\
+	  imadd %[ql2], %[x5], %[halfbit]  \n\
+	add %[x7], %[x7], %[x5c]  \n\
+	  iadd %[qh1], %[qh1], %[r1]  \n\
+	add %[qh2], %[qh2], %[x7]  \n\
+	add %[x0], %[ql1], %[npnn]  \n\
+	movgteu %[x0c], %[one]  \n\
+	  iadd %[qh2], %[qh2], %[r2]  \n\
+	add %[qh1], %[qh1], %[x0c]  \n\
+	add %[x4], %[ql2], %[npnn]  \n\
+	movgteu %[x4c], %[one]  \n\
+	  imul %[x2], %[qh1], %[d1]  \n\
+	add %[qh2], %[qh2], %[x4c]  \n\
+	mov %[x1], #0  \n\
+	mov %[x5], #0  \n\
+	  imul %[x6], %[qh2], %[d2]  \n\
+	sub %[r1], %[npnn], %[x2]  \n\
+	sub %[x0], %[r1], %[x0]  \n\
+	movgtu %[x1], %[d1]  \n\
+	sub %[r2], %[npnn], %[x6]  \n\
+	sub %[x4], %[r2], %[x4]  \n\
+	movgtu %[x5], %[d2]  \n\
+	add %[r1], %[r1], %[x1]  \n\
+	add %[r2], %[r2], %[x5]  \n\
+	sub %[x1], %[r1], %[d1]  \n\
+	movgteu %[r1], %[x1]  \n\
+	sub %[x5], %[r2], %[d2]  \n\
+	movgteu %[r2], %[x5]" :
+  TMP(x0), TMP(x1), TMP(x2), TMP(x3), TMP(x4), TMP(x5), TMP(x6), TMP(x7),
+  TMP(x1c), TMP(x5c), TMP(x0c), TMP(x4c),
+  TMP(ql1), TMP(ql2), TMP(qh1), TMP(qh2),
+  REG(r1), REG(r2) :
+  INREG(vl1), INREG(vl2), INREG(vh1), INREG(vh2), INREG(npnn),
+  INREG(d1), INREG(d2),
+  CNST(lowmask), CNST(one), CNST(halfbit) : "cc");
+
+#undef REG
+#undef TMP
+#undef INREG
+#undef OUTREG
+#undef CNST
+
     }
 
   *rp1 = r1 >> inv1->shift;
