@@ -273,7 +273,6 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 {
   mp_limb_t ul, cl, hpl, lpl, rl;
   mp_limb_t ul2, cl2, lpl2;
-  mp_ptr up2;
   mp_size_t halfn = n>>1;
 
   assert (n >= 1);
@@ -295,28 +294,53 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
       n--;
     }
 
-  up2 = up + halfn;
   cl2 = 0;
 
-  unsigned vll = vl & 0xffff;
-  unsigned vlh = vl >> 16;
-
-  while (n != 0)
+  if (n != 0)
     {
-      unsigned lowmask = 0xffff;
-      unsigned one = 1;
-      unsigned halfbit = 0x10000;
-      unsigned halfnidx = halfn << 2;
+    unsigned vll; // = vl & 0xffff;
+    unsigned vlh; // = vl >> 16;
+
+      unsigned lowmask; // = 0xffff;
+      unsigned one; // = 1;
+      unsigned halfbit; // = 0x10000;
+      unsigned halfnidx; // = halfn << 2;
       unsigned x1c, x5c, clc, clc2, clc3;
       unsigned x1, x2, x3, x4, x5, x6, x7;
-      ul = *up++;
-        ul2 = *up2++;
 
 #define REG(x) [x] "+r"(x)
 #define TMP(x) [x] "=&r"(x)
 #define OUTREG(x) [x] "=&r"(x)
 #define INREG(x) [x] "r"(x)
 #define CNST(x) [x] "r"(x)
+
+      asm volatile ("\n\
+	mov %[one], #1 \n\
+	  isub r62, r62, r62 \n\
+	lsl %[halfbit], %[one], #16 \n\
+	  isub %[cl2], %[cl2], %[cl2] \n\
+	lsl %[halfnidx], %[halfn], #2 \n\
+	lsr %[vlh], %[vl], #16 \n\
+	  isub %[lowmask], %[halfbit], %[one] \n\
+        mov %[x1], 1f \n\
+	  iadd r62, r62, %[up] \n\
+        mov %[x2], 2f \n\
+	  iadd r63, %[halfnidx], %[up] \n\
+        movts ls, %[x1] \n\
+        movts le, %[x2] \n\
+        movts lc, %[halfn] \n\
+	and %[vll], %[vl], %[lowmask] \n\
+        gid \n\
+.balignw 8,0x01a2 \n\
+1: \n\
+	ldr %[ul], [r62], #1 \n\
+	ldr %[ul2], [r63], #1 \n\
+  " :
+	TMP(x1), TMP(x2),
+	OUTREG(ul), OUTREG(ul2), REG(up),
+	OUTREG(lowmask), OUTREG(one), OUTREG(halfbit), OUTREG(halfnidx),
+	OUTREG(vll), OUTREG(vlh), OUTREG(cl2) :
+	INREG(halfn), INREG(vl) : "cc", "r62", "r63");
 
       asm volatile ("\n\
 	and %[x1], %[ul], %[lowmask]    \n\
@@ -326,7 +350,7 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 	  imul %[lpl2], %[x1], %[vll] ; lpl2 reused for x0    \n\
 	lsr %[x7], %[ul2], #16         \n\
 	  imul %[x1], %[x1], %[vlh]     \n\
-        ldr %[ul], [%[rp]]            ; ul reused for rl\n\
+        ldr.l %[ul], [%[rp]]            ; ul reused for rl\n\
 	  imul %[x4], %[x6], %[vll]   \n\
         ldr %[ul2], [%[rp],%[halfnidx]]  ; ul2 reused for rl2\n\
 	  imul %[x2], %[x3], %[vll]     \n\
@@ -361,22 +385,25 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 	add %[lpl2], %[lpl2], %[cl2]     \n\
 	  isub %[clc], %[one], %[one]  \n\
 	movgteu %[clc2], %[one]          \n\
-	add %[x6], %[x6], %[x7]      \n\
-	add %[lpl], %[lpl], %[ul]        \n\
+	add.l %[x6], %[x6], %[x7]      \n\
+	add.l %[lpl], %[lpl], %[ul]        \n\
 	movgteu %[clc3], %[one]          \n\
 	  iadd %[cl2], %[clc2], %[x6]  \n\
 	add %[lpl2], %[lpl2], %[ul2]     \n\
 	movgteu %[clc], %[one]           \n\
 	  iadd %[cl], %[cl], %[clc3]        \n\
         str %[lpl2], [%[rp], %[halfnidx]] \n\
+.balignw 8,0x01a2 \n\
         str %[lpl], [%[rp]], #+1       \n\
-	  iadd %[cl2], %[cl2], %[clc]" :
+2: \n\
+	  iadd %[cl2], %[cl2], %[clc] \n\
+	gie" :
   TMP(lpl), TMP(lpl2),
   TMP(x1), TMP(x2), TMP(x3), TMP(x4), TMP(x5), TMP(x6), TMP(x7), 
   TMP(x1c), TMP(x5c), TMP(clc), TMP(clc2), TMP(clc3),
   REG(ul), REG(ul2), REG(cl), REG(cl2), REG(rp) :
   INREG(vll), INREG(vlh), INREG(halfnidx),
-  CNST(lowmask), CNST(one), CNST(halfbit) : "cc");
+  CNST(lowmask), CNST(one), CNST(halfbit) : "cc", "r62", "r63");
 
 #undef REG
 #undef TMP
@@ -384,7 +411,6 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 #undef OUTREG
 #undef CNST
 
-      n -= 2;
     }
 
   cl2 += mpn_add_1_inplace(rp, halfn, cl);

@@ -349,9 +349,14 @@ static void singleTest(unsigned i, mpz_t candidate, mpz_t testpow, mpz_t testres
           mpz_add_ui(candidate, candidate, 4);
           mpz_powm(testres, two, testpow, candidate);
           if (mpz_cmp_ui(testres, 1) == 0) primes++;
-        }
 
-        mpz_sub_ui(candidate, candidate, 16);
+          mpz_sub_ui(candidate, candidate, 16);
+        }
+	else
+	{
+	  mpz_sub_ui(candidate, candidate, 12);
+	}
+
         reportSuccess(candidate, primes);
 }
 

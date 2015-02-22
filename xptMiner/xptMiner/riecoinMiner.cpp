@@ -72,7 +72,7 @@ void reportSuccess(mpz_t candidate, unsigned nPrimes)
   mpz_clear(testres);
   mpz_clear(three);
 
-  DPRINTF("Verified: %d, reported: %d\n", nPrimes, vPrimes);
+  DPRINTF("Verified: %d, reported: %d\n", vPrimes, nPrimes);
   if (vPrimes < nPrimes)
   {
     DPRINTF("ERROR!!\n");
