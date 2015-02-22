@@ -313,8 +313,8 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
         ul2 = *up2++;
 
 #define REG(x) [x] "+r"(x)
-#define TMP(x) [x] "=r"(x)
-#define OUTREG(x) [x] "=r"(x)
+#define TMP(x) [x] "=&r"(x)
+#define OUTREG(x) [x] "=&r"(x)
 #define INREG(x) [x] "r"(x)
 #define CNST(x) [x] "r"(x)
 

@@ -101,7 +101,7 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
                         const struct gmp_div_inverse *inv2)
 {
   mp_limb_t d1, di1, d2, di2;
-  mp_limb_t r1 = 0, r2 = 0;
+  mp_limb_t r1, r2;
 
   assert(inv1->shift == inv2->shift);
 
@@ -117,7 +117,7 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
     vh2 = di2 >> (GMP_LIMB_BITS / 2);
   unsigned* _np = &np[nn-1];
 
-  while (nn-- > 0)
+  //while (nn-- > 0)
     {
       unsigned lowmask = 0xffff;
       unsigned one = 1;
@@ -127,12 +127,22 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
       mp_limb_t qh2, ql2, x5, x6, x7;
 
 #define REG(x) [x] "+r"(x)
-#define TMP(x) [x] "=r"(x)
-#define OUTREG(x) [x] "=r"(x)
+#define TMP(x) [x] "=&r"(x)
+#define OUTREG(x) [x] "=&r"(x)
 #define INREG(x) [x] "r"(x)
 #define CNST(x) [x] "r"(x)
 	  
         asm volatile("\n\
+	mov %[ql1], 1f \n\
+	  isub %[r1], %[lowmask], %[lowmask] \n\
+	mov %[ql2], 2f \n\
+	  isub %[r2], %[lowmask], %[lowmask] \n\
+	movts ls, %[ql1] \n\
+	movts le, %[ql2] \n\
+	movts lc, %[nn] \n\
+	gid \n\
+.balignw 8,0x01a2 \n\
+1: \n\
 	and %[x1], %[r1], %[lowmask]    \n\
 	  isub %[x1c], %[lowmask], %[lowmask] \n\
 	lsr %[x3], %[r1], #16           \n\
@@ -192,12 +202,16 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
 	add %[r2], %[r2], %[x5]  \n\
 	sub %[x1], %[r1], %[d1]  \n\
 	movgteu %[r1], %[x1]  \n\
+	  isub %[x2], %[lowmask], %[lowmask] ; For alignment \n\
+.balignw 8,0x01a2 \n\
 	sub %[x5], %[r2], %[d2]  \n\
-	movgteu %[r2], %[x5]" :
+2: \n\
+	movgteu %[r2], %[x5] \n\
+	gie" :
   TMP(x1), TMP(x2), TMP(x3), TMP(x5), TMP(x6), TMP(x7),
   TMP(x1c), TMP(x5c), TMP(x0c), TMP(x4c),
   TMP(ql1), TMP(ql2), TMP(qh1), TMP(qh2),
-  REG(r1), REG(r2), [np] "+r" (_np) :
+  OUTREG(r1), OUTREG(r2), [np] "+r" (_np), [nn] "+r" (nn) :
   INREG(vl1), INREG(vl2), INREG(vh1), INREG(vh2),
   INREG(d1), INREG(d2),
   CNST(lowmask), CNST(one), CNST(halfbit) : "cc");
