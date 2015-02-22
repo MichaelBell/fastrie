@@ -6,8 +6,6 @@ built upon xptMiner.  It contains only a Riecoin miner - for the
 reference implementation of xptMiner, please see 
 https://github.com/jh000/xptMiner
 
-This build supports Linux and Windows, the latter via the Makefile.mingw.
-
 Authors:  xptMiner was written by jh00;
           This version is based upon dga's fastrie variant, which in turn
           was based upon the Unix port by Clintar
@@ -24,7 +22,8 @@ sudo apt-get -y install build-essential m4 openssl libssl-dev git libjson0 libjs
 POOL SET UP
 ===========
 
-Create an account on http://ypool.net and set up a Riecoin worker.  
+Create an account on http://ypool.net and configure a name and password for
+a Riecoin worker.  
 
 BUILDING
 ========
