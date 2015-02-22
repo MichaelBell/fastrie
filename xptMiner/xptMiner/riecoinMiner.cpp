@@ -9,7 +9,7 @@
 
 #define zeroesBeforeHashInPrime	8
 
-#define DEBUG 1
+//#define DEBUG 1
 
 #if DEBUG
 #define DPRINTF(fmt, args...) do { printf("line %d: " fmt, __LINE__, ##args); fflush(stdout); } while(0)

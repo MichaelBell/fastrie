@@ -563,7 +563,6 @@ sysctl(mib, 2, &numcpu, &len, NULL, 0);
 	printf("  http://ypool.net\n");
 	printf("----------------------------\n");
 	printf("Launching miner...\n");
-	printf("Using %d +1 CPU threads\n", commandlineInput.numThreads);
 	commandlineInput.numThreads += 1;
 
 	if( commandlineInput.useGPU ) {

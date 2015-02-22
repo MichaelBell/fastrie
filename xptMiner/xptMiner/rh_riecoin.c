@@ -421,7 +421,7 @@ static void initSieve()
     sieveOffsets[5][j] = k;
   }
 
-  printf("Low sieve initialized to %d (j=%d)\n", primeTable[j], j);
+  //printf("Low sieve initialized to %d (j=%d)\n", primeTable[j], j);
   lowSieveDone = 0;
 
   pthread_t lowsievethread;
@@ -661,7 +661,7 @@ static void* testThread(__attribute__ ((unused)) void* unused)
       }
     }
   }
-  printf("Test thread complete\n");
+  //printf("Test thread complete\n");
   mpz_clear(candidate);
   mpz_clear(testpow);
   mpz_clear(testres);
