@@ -1,3 +1,20 @@
+// Epiphany implementation for testing for prime sextuplets.
+// Candidates are of the form n + k.167# + {0,4,6,10,12,16}
+// where n is large, k is < 2^31 and 167# is the product of primes <= 167.
+// n and a small array of k values are read from shared memory by DMA transfer,
+// results are written back to shared memory as they are computed.
+//
+// Multiprecision code is taken from the GMP library, mostly from mini-gmp.
+// Additionally the unsigned division is a modification of the epiphany
+// udivsi3 implementation in GCC.
+// All other code and modifications to the above are copyright Mike Bell 2015.
+//
+// You may use this source in accordance with the GPLv3 license
+// For portions of source code authored by Mike Bell that are not derived works
+// of GPL licensed code, Mike Bell grants permission for them to be reused
+// freely in any projects (commercial or open source) under any license.
+// Please contact him if you would like clarification on that.
+
 #include "e_lib.h"
 #define assert(x)
 

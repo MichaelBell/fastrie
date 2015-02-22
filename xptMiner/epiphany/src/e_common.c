@@ -1,3 +1,16 @@
+// Common epiphany code between prime testing and mod p calculation.
+//
+// Multiprecision code is taken from the GMP library, mostly from mini-gmp.
+// Additionally the unsigned division is a modification of the epiphany
+// udivsi3 implementation in GCC.
+// All other code and modifications to the above are copyright Mike Bell 2015.
+//
+// You may use this source in accordance with the GPLv3 license
+// For portions of source code authored by Mike Bell that are not derived works
+// of GPL licensed code, Mike Bell grants permission for them to be reused
+// freely in any projects (commercial or open source) under any license.
+// Please contact him if you would like clarification on that.
+
 struct gmp_div_inverse
 {
   /* Normalization shift count. */

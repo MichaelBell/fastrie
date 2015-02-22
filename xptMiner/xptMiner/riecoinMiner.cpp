@@ -1,4 +1,9 @@
-#include"global.h"
+// xptMiner interface to wrap generic rh_riecoin implementation
+// Originally based on dga and jh00's code but almost completely re-written
+// by Mike Bell.  
+// Modifications copyright Mike Bell 2015.
+
+#include "global.h"
 #include <assert.h>
 #include "rh_riecoin.h"
 

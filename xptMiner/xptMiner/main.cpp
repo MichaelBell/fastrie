@@ -7,7 +7,7 @@
 #define MAX_TRANSACTIONS	(4096)
 
 // miner version string (for pool statistic)
-char* minerVersionString = "xptMiner 1.7rh-epip1";
+char* minerVersionString = "xptMiner 1.7rh-epip2";
 
 minerSettings_t minerSettings = {0};
 
@@ -558,8 +558,8 @@ sysctl(mib, 2, &numcpu, &len, NULL, 0);
 	commandlineInput.numThreads = 0;
 	minerSettings.useGPU = commandlineInput.useGPU;
 	printf("----------------------------\n");
-	printf("  xptMiner/ric/dga (%s)\n", minerVersionString);
-	printf("  author: jh00 (xptminer) dga (ric core)\n");
+	printf("  xptMiner/ric/rh (%s)\n", minerVersionString);
+	printf("  author: jh00 (xptminer) rh (parallella)\n");
 	printf("  http://ypool.net\n");
 	printf("----------------------------\n");
 	printf("Launching miner...\n");

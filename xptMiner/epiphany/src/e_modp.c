@@ -1,3 +1,21 @@
+// Epiphany implementation for reduction of n mod p for large n and small 
+// primes p (currently < 2^30, although raising this limit to 2^31 would be 
+// reasonably simple).
+// A bitfield representing the odd numbers that are primes above a certain base
+// is read in from shared memory by DMA transfer, along with n.
+// n % p is computed and returned back to shared memory in pages.
+//
+// Multiprecision code is taken from the GMP library, mostly from mini-gmp.
+// Additionally the unsigned division is a modification of the epiphany
+// udivsi3 implementation in GCC.
+// All other code and modifications to the above are copyright Mike Bell 2015.
+//
+// You may use this source in accordance with the GPLv3 license
+// For portions of source code authored by Mike Bell that are not derived works
+// of GPL licensed code, Mike Bell grants permission for them to be reused 
+// freely in any projects (commercial or open source) under any license.
+// Please contact him if you would like clarification on that.
+
 #include "e_lib.h"
 #define assert(x)
 
@@ -8,6 +26,9 @@
 static modp_indata_t inbuf;
 static volatile unsigned wait_flag;
 
+// CLZ algorithm from Hacker's delight implemented in Epiphany asm.  
+// This variant assumes there is at least one leading zero, but tolerates
+// a zero input.
 #define gmp_clz(count, xx) do {                                         \
     unsigned config = 0x1;                                              \
     unsigned _x = (xx);                                                 \
@@ -242,7 +263,7 @@ mpn_div_qr_1_invert (struct gmp_div_inverse *inv, mp_limb_t d)
 
 
 // return t such that at = 1 mod b
-// a, b < 2^31.
+// a, b < 2^30.
 // Algorithm from http://www.ucl.ac.uk/~ucahcjm/combopt/ext_gcd_python_programs.pdf
 // with modification to keep s, t in bounds.
 static unsigned int inverse(unsigned int a, unsigned int b)

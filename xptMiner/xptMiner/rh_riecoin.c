@@ -2,7 +2,7 @@
  * Copyright 2011 ArtForz
  * Copyright 2011-2013 pooler
  * Copyright 2013 gatra
- * Copyright 2015 rockhawk
+ * Copyright 2015 Mike Bell
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
