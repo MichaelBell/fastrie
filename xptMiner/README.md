@@ -6,18 +6,18 @@ built upon xptMiner.  It contains only a Riecoin miner - for the
 reference implementation of xptMiner, please see 
 https://github.com/jh000/xptMiner
 
-Authors:  xptMiner was written by jh00;
-          This version is based upon dga's fastrie variant, which in turn
-          was based upon the Unix port by Clintar
-          The Parallella implementation is by Michael Bell, aka rockhawk
+Authors:  
+ * xptMiner was written by jh00;
+ * This version is based upon dga's fastrie variant, which in turn
+   was based upon the Unix port by Clintar
+ * The Parallella implementation is by Michael Bell, aka rockhawk
 
-Some instructions to get started
-
+Some instructions to get started:
 
 PREREQUISITES 
 =============
 Linaro:
-sudo apt-get -y install build-essential m4 openssl libssl-dev git libjson0 libjson0-dev libcurl4-openssl-dev wget libgmp-dev
+    sudo apt-get -y install build-essential m4 openssl libssl-dev git libjson0 libjson0-dev libcurl4-openssl-dev wget libgmp-dev
 
 POOL SET UP
 ===========
@@ -28,9 +28,9 @@ a Riecoin worker.
 BUILDING
 ========
 
-git clone https://github.com/MichaelBell/fastrie.git
-cd fastrie/xptMiner
-make -j2
-./run.sh -u username.riecoinworkername -p workerpassword
+    git clone https://github.com/MichaelBell/fastrie.git
+    cd fastrie/xptMiner
+    make -j2
+    ./run.sh -u username.riecoinworkername -p workerpassword
 
 This has a default 2% donation that can be set using the -d option (-d 2.5 would be 2.5% donation)
