@@ -115,16 +115,16 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
   vh1 = di1 >> (GMP_LIMB_BITS / 2);
     vl2 = di2 & GMP_LLIMB_MASK;
     vh2 = di2 >> (GMP_LIMB_BITS / 2);
+  unsigned* _np = &np[nn-1];
 
   while (nn-- > 0)
     {
       unsigned lowmask = 0xffff;
       unsigned one = 1;
       unsigned halfbit = 0x10000;
-      unsigned npnn = np[nn];
       unsigned x0c, x1c, x4c, x5c;
-      mp_limb_t qh1, ql1, x0, x1, x2, x3;
-      mp_limb_t qh2, ql2, x4, x5, x6, x7;
+      mp_limb_t qh1, ql1, x1, x2, x3;
+      mp_limb_t qh2, ql2, x5, x6, x7;
 
 #define REG(x) [x] "+r"(x)
 #define TMP(x) [x] "=r"(x)
@@ -138,27 +138,27 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
 	lsr %[x3], %[r1], #16           \n\
 	  isub %[x5c], %[lowmask], %[lowmask] \n\
 	and %[x6], %[r2], %[lowmask]  \n\
-	  imul %[x0], %[x1], %[vl1]   \n\
+	  imul %[ql1], %[x1], %[vl1]   \n\
 	lsr %[x7], %[r2], #16         \n\
           imul %[x1], %[x1], %[vh1]     \n\
 	add %[r1], %[r1], #1  \n\
-          imul %[x4], %[x6], %[vl2]   \n\
+          imul %[ql2], %[x6], %[vl2]   \n\
 	add %[r2], %[r2], #1 \n\
           imul %[x2], %[x3], %[vl1]     \n\
-	lsr %[x0c], %[x0], #16        \n\
+	lsr %[x0c], %[ql1], #16        \n\
           imul %[x3], %[x3], %[vh1]     \n\
 	add %[x1], %[x1], %[x0c]      \n\
           imul %[x5], %[x6], %[vh2]   \n\
-	and %[ql1], %[x0], %[lowmask] \n\
+	and %[ql1], %[ql1], %[lowmask] \n\
           imul %[x6], %[x7], %[vl2]   \n\
-	lsr %[x4c], %[x4], #16        \n\
+	lsr %[x4c], %[ql2], #16        \n\
           imul %[x7], %[x7], %[vh2]   \n\
 	add %[x1], %[x1], %[x2]       \n\
 	  isub %[x0c], %[lowmask], %[lowmask]  \n\
 	movgteu %[x1c], %[halfbit]    \n\
 	add %[x5], %[x5], %[x4c]      \n\
 	  imadd %[ql1], %[x1], %[halfbit]  \n\
-	and %[ql2], %[x4], %[lowmask]  \n\
+	and %[ql2], %[ql2], %[lowmask]  \n\
 	  iadd %[x3], %[x3], %[x1c]  \n\
 	lsr %[qh1], %[x1], #16  \n\
 	  isub %[x4c], %[lowmask], %[lowmask]  \n\
@@ -169,23 +169,24 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
 	  imadd %[ql2], %[x5], %[halfbit]  \n\
 	add %[x7], %[x7], %[x5c]  \n\
 	  iadd %[qh1], %[qh1], %[r1]  \n\
+	ldr %[x3], [%[np]], #-1  ; x3 reused for np[nn] \n\
 	add %[qh2], %[qh2], %[x7]  \n\
-	add %[x0], %[ql1], %[npnn]  \n\
+	add %[ql1], %[ql1], %[x3]  \n\
 	movgteu %[x0c], %[one]  \n\
 	  iadd %[qh2], %[qh2], %[r2]  \n\
 	add %[qh1], %[qh1], %[x0c]  \n\
-	add %[x4], %[ql2], %[npnn]  \n\
+	add %[ql2], %[ql2], %[x3]  \n\
 	movgteu %[x4c], %[one]  \n\
 	  imul %[x2], %[qh1], %[d1]  \n\
 	add %[qh2], %[qh2], %[x4c]  \n\
 	mov %[x1], #0  \n\
 	mov %[x5], #0  \n\
 	  imul %[x6], %[qh2], %[d2]  \n\
-	sub %[r1], %[npnn], %[x2]  \n\
-	sub %[x0], %[r1], %[x0]  \n\
+	sub %[r1], %[x3], %[x2]  \n\
+	sub %[ql1], %[r1], %[ql1]  \n\
 	movgtu %[x1], %[d1]  \n\
-	sub %[r2], %[npnn], %[x6]  \n\
-	sub %[x4], %[r2], %[x4]  \n\
+	sub %[r2], %[x3], %[x6]  \n\
+	sub %[ql2], %[r2], %[ql2]  \n\
 	movgtu %[x5], %[d2]  \n\
 	add %[r1], %[r1], %[x1]  \n\
 	add %[r2], %[r2], %[x5]  \n\
@@ -193,11 +194,11 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
 	movgteu %[r1], %[x1]  \n\
 	sub %[x5], %[r2], %[d2]  \n\
 	movgteu %[r2], %[x5]" :
-  TMP(x0), TMP(x1), TMP(x2), TMP(x3), TMP(x4), TMP(x5), TMP(x6), TMP(x7),
+  TMP(x1), TMP(x2), TMP(x3), TMP(x5), TMP(x6), TMP(x7),
   TMP(x1c), TMP(x5c), TMP(x0c), TMP(x4c),
   TMP(ql1), TMP(ql2), TMP(qh1), TMP(qh2),
-  REG(r1), REG(r2) :
-  INREG(vl1), INREG(vl2), INREG(vh1), INREG(vh2), INREG(npnn),
+  REG(r1), REG(r2), [np] "+r" (_np) :
+  INREG(vl1), INREG(vl2), INREG(vh1), INREG(vh2),
   INREG(d1), INREG(d2),
   CNST(lowmask), CNST(one), CNST(halfbit) : "cc");
 

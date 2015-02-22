@@ -30,12 +30,12 @@
 // b = 2^(z+264) + a * 2^z where a is 256-bits and z > 256.
 // x+k.q#+16057 must be < 256-bits => limit on q# of say 220-bits => q=167 pi(q)=39.
 
-#define MAX_SIEVE_PRIME  979270213 // Should be just < multiple of MODP_E_SIEVE_SIZE<<5 + prime[LOW_PRIME_INDEX]
-#define PRIME_TABLE_SIZE 49846420  // Not including 2.
-#define LOW_PRIME_IDX    3372
-//#define MAX_SIEVE_PRIME  162529309  // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
-//#define PRIME_TABLE_SIZE 9108221  // Not including 2.
-//#define LOW_PRIME_IDX    2506
+//#define MAX_SIEVE_PRIME  979270213 // Should be just < multiple of MODP_E_SIEVE_SIZE<<5 + prime[LOW_PRIME_INDEX]
+//#define PRIME_TABLE_SIZE 49846420  // Not including 2.
+//#define LOW_PRIME_IDX    3372
+#define MAX_SIEVE_PRIME  162529309  // Should be just > multiple of MODP_E_SIEVE_SIZE<<5
+#define PRIME_TABLE_SIZE 9108221  // Not including 2.
+#define LOW_PRIME_IDX    2506
 //#define SIEVE_SIZE       (MAX_SIEVE_PRIME+(2400000-(MAX_SIEVE_PRIME%2400000)))
 #define SIEVE_SIZE       (8*2400000)
 #define OFFSETS_SIZE     ((SIEVE_SIZE>>3) < PRIME_TABLE_SIZE ? (SIEVE_SIZE>>3) : PRIME_TABLE_SIZE)

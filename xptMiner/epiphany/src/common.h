@@ -1,6 +1,6 @@
 #pragma once
 
-//#define MODP_RESULT_DEBUG
+#define MODP_RESULT_DEBUG
 #define SHARED_MEM_PER_CORE 0x40000
 
 #define FIXED_MP_NUM_LEN 126
