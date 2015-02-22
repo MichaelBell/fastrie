@@ -17,7 +17,8 @@ Some instructions to get started:
 PREREQUISITES 
 =============
 Linaro:
-    sudo apt-get -y install build-essential m4 openssl libssl-dev git libjson0 libjson0-dev libcurl4-openssl-dev wget libgmp-dev
+
+    sudo apt-get install build-essential m4 openssl libssl-dev git libjson0 libjson0-dev libcurl4-openssl-dev wget libgmp-dev
 
 POOL SET UP
 ===========
