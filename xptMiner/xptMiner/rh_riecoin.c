@@ -258,6 +258,7 @@ static int epip_waitfor(unsigned row, unsigned col)
         ++sleeps;
         if (sleeps == 100000) {
           fprintf(stderr, "Core (%d,%d) stuck\n", row, col);
+	  exit(-1);
           return -1;
         }
       }
@@ -499,6 +500,7 @@ static void initSieve()
           {
             // Seen this once in over 50 hours.  Cancel everything and break out.
             printf("Error: Core %d stuck while sieving\n", core);
+	    exit(-1);
             cancelEverything = 1;
             pthread_join(lowsievethread, NULL);
             return;
@@ -684,6 +686,7 @@ static unsigned epipReadTestResults(unsigned numCores)
     if ((sleeps = epip_waitfor(core>>2, core&3)) < 0) 
     {
       printf("Ignoring stuck core %d\n", core);
+      exit(-1);
       continue;
     }
     totalSleeps += sleeps;
