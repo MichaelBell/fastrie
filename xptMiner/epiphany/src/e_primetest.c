@@ -339,9 +339,9 @@ mpn_addmul_1 (mp_ptr rp, mp_srcptr up, mp_size_t n, mp_limb_t vl)
 	lsl %[halfnidx], %[halfn], #2 \n\
 	lsr %[vlh], %[vl], #16 \n\
 	  isub %[lowmask], %[halfbit], %[one] \n\
-        mov %[x1], 1f \n\
+        mov %[x1], %%low(1f) \n\
 	  iadd r62, r62, %[up] \n\
-        mov %[x2], 2f \n\
+        mov %[x2], %%low(2f) \n\
 	  iadd r63, %[halfnidx], %[up] \n\
         movts ls, %[x1] \n\
         movts le, %[x2] \n\

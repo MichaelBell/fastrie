@@ -154,9 +154,9 @@ mpn_div_r_1_preinv_ns_2(mp_limb_t* rp1, mp_limb_t* rp2,
 #define CNST(x) [x] "r"(x)
 	  
         asm volatile("\n\
-	mov %[ql1], 1f \n\
+	mov %[ql1], %%low(1f) \n\
 	  isub %[r1], %[lowmask], %[lowmask] \n\
-	mov %[ql2], 2f \n\
+	mov %[ql2], %%low(2f) \n\
 	  isub %[r2], %[lowmask], %[lowmask] \n\
 	movts ls, %[ql1] \n\
 	movts le, %[ql2] \n\

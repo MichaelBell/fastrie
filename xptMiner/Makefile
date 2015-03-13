@@ -8,7 +8,7 @@ CFLAGS = -Wall -Wextra -O3 -fomit-frame-pointer  -g -std=gnu99
 
 
 OSVERSION := $(shell uname -s)
-LIBS = -lcrypto -lssl -pthread  -ldl -le-hal
+LIBS = -lcrypto -lssl -pthread  -ldl -le-hal -le-loader
 ifeq ($(INT_LIB),mpir)
        MPIR_DEF=-DUSE_MPIR
        CFLAGS +=$(MPIR_DEF)

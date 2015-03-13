@@ -20,6 +20,7 @@
 #include <gmp.h>
 
 #include <e-hal.h>
+#include <e-loader.h>
 
 #include "rh_riecoin.h"
 
