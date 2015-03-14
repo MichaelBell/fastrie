@@ -1,6 +1,7 @@
 #include <gmp.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include "rh_riecoin.h"
 
 void riecoin_init(uint64_t, int);
@@ -46,7 +47,7 @@ extern mpz_t z_target;
 void xptMiner_submitShare(minerRiecoinBlock_t*, uint8*)
 {}
 
-int main()
+int main(int argc, char* argv[])
 {
   minerRiecoinBlock_t block;
   monitorCurrentBlockHeight = 1200;
@@ -55,9 +56,33 @@ int main()
 
   riecoin_init(0, 0); 
 
-  mpz_init_set_str(z_target, "2001617f4d78f05f0787e8ed9dd5c0d03df3f36098fc9fe1270772ecd697b0a94a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", 16);
+  if (argc < 3)
+  {
+    mpz_init_set_str(z_target, "2001617f4d78f05f0787e8ed9dd5c0d03df3f36098fc9fe1270772ecd697b0a94a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", 16);
 
-  rh_search(z_target);
+    rh_search(z_target);
+
+    printf("Found (%d, %d, %d)\n", total2ChainCount, total3ChainCount, total4ChainCount);
+  } 
+  else
+  {
+    int min = atoi(argv[1]);
+    int max = atoi(argv[2]);
+
+    mpz_init_set_str(z_target, "2001617f4d78f05f0787e8ed9dd5c0d03df3f36098fc9fe1270772ecd697b0a94a", 16);
+
+    mpz_mul_2exp(z_target, z_target, min);
+
+    for (int i = min; i <= max; ++i)
+    {
+      rh_search(z_target);
+
+      printf("i=%d: Found (%d, %d, %d)\n", i, total2ChainCount, total3ChainCount, total4ChainCount);
+
+      total2ChainCount = total3ChainCount = total4ChainCount = 0;
+      mpz_mul_2exp(z_target, z_target, 1);
+    }
+  }
 
   return 0;
 }
