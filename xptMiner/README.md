@@ -32,6 +32,28 @@ BUILDING
     git clone https://github.com/MichaelBell/fastrie.git
     cd fastrie/xptMiner
     make -j2
+
+RUNNING
+=======
+
     ./run.sh -u username.riecoinworkername -p workerpassword
 
 This has a default 2% donation that can be set using the -d option (-d 2.5 would be 2.5% donation)
+
+RUNNING AS A SERVICE
+====================
+
+To dedicate a Parallella to running the miner, edit rieminer.conf in the
+fastrie directory to specify your own username and password, then
+copy it to /etc/init.  After that
+
+    sudo service rieminer start
+
+will begin mining.
+
+Note this service will automatically reboot the Parallella to recover on error,
+after a one minute sleep so you can stop the service if it is repeatedly 
+rebooting.  Stop it with:
+
+    sudo service rieminer stop
+

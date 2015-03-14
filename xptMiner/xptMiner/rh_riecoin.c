@@ -258,7 +258,7 @@ static int epip_waitfor(unsigned row, unsigned col)
         nanosleep(&sleeptime, NULL);
         ++sleeps;
         if (sleeps == 100000) {
-          fprintf(stderr, "Core (%d,%d) stuck\n", row, col);
+          printf("Core (%d,%d) stuck\n", row, col);
 	  exit(-1);
           return -1;
         }
@@ -699,6 +699,7 @@ static unsigned epipReadTestResults(unsigned numCores)
           ptest_outbuf.result[i].primes > 6)
       {
         printf("Error - %d prime report from core %d\n", ptest_outbuf.result[i].primes, core);
+        exit(-1);
         break;
       }
       {
