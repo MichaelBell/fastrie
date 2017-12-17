@@ -5,6 +5,14 @@
 #include <math.h>
 #include <primesieve.hpp>
 
+#include <immintrin.h>
+
+union xmmreg
+{
+  uint32_t v[4];
+  __m128i m128;
+};
+
 #define zeroesBeforeHashInPrime	8
 
 #define DEBUG 0
@@ -18,7 +26,8 @@
 static constexpr int NONCE_REGEN_SECONDS = 195;
 static constexpr uint32_t riecoin_sieveBits = 23; /* normally 22. 8 million, or 1MB, tuned for Haswell L3 */
 static constexpr uint32_t riecoin_sieveSize = (1UL<<riecoin_sieveBits); /* 1MB, tuned for L3 of Haswell */
-static constexpr uint32_t riecoin_sieveWords = riecoin_sieveSize/64;
+static constexpr uint32_t riecoin_sieveWords64 = riecoin_sieveSize/64;
+static constexpr uint32_t riecoin_sieveWords128 = riecoin_sieveSize/128;
 
 uint32_t riecoin_primeTestLimit;
 uint32_t num_entries_per_segment = 0;
@@ -230,7 +239,7 @@ inline void silly_sort_indexes(uint32_t indexes[6]) {
   }
 }
 
-#define PENDING_SIZE 16
+#define PENDING_SIZE 32
 
 inline void init_pending(uint32_t pending[PENDING_SIZE]) {
   for (int i = 0; i < PENDING_SIZE; i++) {
@@ -247,7 +256,30 @@ inline void add_to_pending(uint8_t *sieve, uint32_t pending[PENDING_SIZE], uint3
   }
   pending[pos] = ent;
   pos++;
-  pos &= 0xf;
+  pos &= PENDING_SIZE-1;
+}
+
+inline void add6_to_pending(uint8_t *sieve, uint32_t pending[PENDING_SIZE], uint32_t &pos, xmmreg ent1, xmmreg ent2) {
+  xmmreg addr;
+#define ADD_REG(reg, cpts) \
+  addr.m128 = _mm_srli_epi32(reg.m128, 3); \
+  for (size_t i = 0; i < cpts; ++i) \
+  { \
+    if (reg.v[i] < riecoin_sieveSize) { \
+      uint32_t old = pending[pos]; \
+      if (old != 0) { \
+        assert(old < riecoin_sieveSize); \
+        sieve[old>>3] |= (1<<(old&7)); \
+      } \
+      __builtin_prefetch(&(sieve[addr.v[i]])); \
+      pending[pos] = reg.v[i]; \
+      pos++; \
+      pos &= PENDING_SIZE-1; \
+    } \
+  }
+  ADD_REG(ent1, 4)
+  ADD_REG(ent2, 2)
+#undef ADD_REG
 }
 
 void put_offsets_in_segments(uint32_t *offsets, int n_offsets) {
@@ -324,17 +356,33 @@ void process_sieve(uint8_t *sieve, uint32_t start_i, uint32_t end_i) {
   uint32_t pending_pos = 0;
   init_pending(pending);
   
+  xmmreg opnomax;
+  opnomax.m128 = _mm_set1_epi32(riecoin_sieveSize);
+
   for (unsigned int i = start_i; i < end_i; i++) {
     uint32_t pno = i+startingPrimeIndex;
-    uint32_t p = riecoin_primeTestTable[pno];
-    for (uint32 f = 0; f < 6; f++) {
-      auto opnof = offsets[pno][f];
-      while (opnof < riecoin_sieveSize) {
-	add_to_pending(sieve, pending, pending_pos, opnof);
-	opnof += p;
-      }
-      offsets[pno][f] = (opnof - riecoin_sieveSize);
+    xmmreg p;
+    xmmreg opno1, opno2, nextopno1, nextopno2;
+    xmmreg cmpres1, cmpres2;
+    p.m128 = _mm_set1_epi32(riecoin_primeTestTable[pno]);
+    opno1.m128 = _mm_loadu_si128((__m128i const *)&offsets[pno][0]);
+    opno2.m128 = _mm_loadu_si128((__m128i const *)&offsets[pno][4]);
+
+    while (true) {
+      cmpres1.m128 = _mm_cmpgt_epi32(opnomax.m128, opno1.m128);
+      cmpres2.m128 = _mm_cmpgt_epi32(opnomax.m128, opno2.m128);
+      if ((_mm_movemask_epi8(cmpres1.m128) == 0) && (_mm_movemask_epi8(cmpres2.m128) & 0xFF) == 0) break;
+      add6_to_pending(sieve, pending, pending_pos, opno1, opno2);
+      nextopno1.m128 = _mm_and_si128(cmpres1.m128, p.m128);
+      nextopno2.m128 = _mm_and_si128(cmpres2.m128, p.m128);
+      opno1.m128 = _mm_add_epi32(opno1.m128, nextopno1.m128);
+      opno2.m128 = _mm_add_epi32(opno2.m128, nextopno2.m128);
     }
+    opno1.m128 = _mm_sub_epi32(opno1.m128, opnomax.m128);
+    opno2.m128 = _mm_sub_epi32(opno2.m128, opnomax.m128);
+    _mm_storeu_si128((__m128i*)&offsets[pno][0], opno1.m128);
+    offsets[pno][4] = opno2.v[0];
+    offsets[pno][5] = opno2.v[1];
   }
 
   for (unsigned int i = 0; i < PENDING_SIZE; i++) {
@@ -635,6 +683,9 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	    n_sparse++;
 	  }
 	}
+	uint32_t round = 8 - (n_dense & 0x7);
+	n_dense += round;
+	n_sparse -= round;
 
 	//printf("\n");
 #if DEBUG
@@ -673,7 +724,9 @@ void riecoin_process(minerRiecoinBlock_t* block)
 
 	    wi.type = TYPE_SIEVE;
 	    n_workers = 0;
-	    incr = ((n_sparse)/N_SIEVE_WORKERS)+1;
+	    incr = ((n_sparse)/N_SIEVE_WORKERS);
+            round = 8 - (incr & 0x7);
+            incr += round;
 	    int which_sieve = 0;
 	    //printf("n_dense: %u  sparse: %u\n", n_dense, n_sparse);
 	    for (auto base = n_dense; base < (n_dense+n_sparse); base += incr) {
@@ -737,12 +790,17 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	      printf("ERROR:  workerDoneQueue has grown too large!  Report this error\n");fflush(stdout);
 	      exit(-1);
 	    }
-	    uint64_t *s64 = (uint64_t *)sieve;
+	    __m128i *sp128 = (__m128i *)sieve;
 
-	    for (unsigned int i = 0; i < riecoin_sieveWords; i++) {
+	    for (unsigned int i = 0; i < riecoin_sieveWords128; i++) {
+              __m128i s128;
+              s128 = _mm_loadu_si128(&sp128[i]);
 	      for (int j = 0; j < N_SIEVE_WORKERS; j++) {
-		s64[i] |= ((uint64_t *)(riecoin_sieves[j]))[i];
+		__m128i ws128;
+                ws128 = _mm_loadu_si128(&((__m128i *)(riecoin_sieves[j]))[i]);
+                s128 = _mm_or_si128(s128, ws128);
 	      }
+              _mm_storeu_si128(&sp128[i], s128);
 	    }
 	    DPRINTF("master - done merging sieves\n");
 		  
@@ -774,7 +832,7 @@ void riecoin_process(minerRiecoinBlock_t* block)
 
 	    bool do_reset = false;
 	    uint64_t *sieve64 = (uint64_t *)sieve;
-	    for(uint32 b = 0; !do_reset && b < riecoin_sieveWords; b++) {
+	    for(uint32 b = 0; !do_reset && b < riecoin_sieveWords64; b++) {
 	      uint64_t sb = ~sieve64[b];
 	      
 	      int sb_process_count = 0;

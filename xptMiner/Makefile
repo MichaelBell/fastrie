@@ -15,11 +15,12 @@ ifeq ($(INT_LIB),mpir)
        CXXFLAGS +=$(MPIR_DEF)
        LIBS+=-lmpir
 else
-       LIBS+=-lgmp -lgmpxx
+       #LIBS+=-lgmp -lgmpxx
+       LIBS+=libgmp.a libgmpxx.a
 endif
 ifeq ($(OSVERSION),Linux)
 	LIBS += -lrt
-	ARCHFLAGS = -march=native
+	ARCHFLAGS = -march=sandybridge -mtune=sandybridge -mno-avx
 #	ARCHFLAGS = -march=corei7-avx
 #	ARCHFLAGS = -march=corei7 -mno-avx
 endif
