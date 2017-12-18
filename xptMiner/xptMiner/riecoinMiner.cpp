@@ -29,6 +29,7 @@ static constexpr uint32_t riecoin_sieveSize = (1UL<<riecoin_sieveBits); /* 1MB, 
 static constexpr uint32_t riecoin_sieveWords64 = riecoin_sieveSize/64;
 static constexpr uint32_t riecoin_sieveWords128 = riecoin_sieveSize/128;
 
+bool search_for_shares;
 uint32_t riecoin_primeTestLimit;
 uint32_t num_entries_per_segment = 0;
 int N_THREADS = 4;
@@ -101,7 +102,7 @@ CRITICAL_SECTION bucket_lock; /* careful */
 mpz_t z_verify_target, z_verify_remainderPrimorial;
 minerRiecoinBlock_t* verify_block;
 
-void riecoin_init(uint64_t sieveMax, int numThreads)
+void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 {
         N_THREADS = numThreads;
 	N_SIEVE_WORKERS = std::max(1, numThreads/4);
@@ -111,6 +112,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads)
         mpz_init(z_verify_target);
 	mpz_init(z_verify_remainderPrimorial);
 
+	search_for_shares = !solo;
         riecoin_primeTestLimit = sieveMax;
 	printf("Generating table of small primes for Riecoin...\n");
 	// generate prime table
@@ -277,8 +279,8 @@ inline void add6_to_pending(uint8_t *sieve, uint32_t pending[PENDING_SIZE], uint
       pos &= PENDING_SIZE-1; \
     } \
   }
-  ADD_REG(ent1, 4)
-  ADD_REG(ent2, 2)
+  ADD_REG(ent1, 2)
+  ADD_REG(ent2, 4)
 #undef ADD_REG
 }
 
@@ -366,12 +368,12 @@ void process_sieve(uint8_t *sieve, uint32_t start_i, uint32_t end_i) {
     xmmreg cmpres1, cmpres2;
     p.m128 = _mm_set1_epi32(riecoin_primeTestTable[pno]);
     opno1.m128 = _mm_loadu_si128((__m128i const *)&offsets[pno][0]);
-    opno2.m128 = _mm_loadu_si128((__m128i const *)&offsets[pno][4]);
+    opno2.m128 = _mm_loadu_si128((__m128i const *)&offsets[pno][2]);
 
     while (true) {
       cmpres1.m128 = _mm_cmpgt_epi32(opnomax.m128, opno1.m128);
       cmpres2.m128 = _mm_cmpgt_epi32(opnomax.m128, opno2.m128);
-      if ((_mm_movemask_epi8(cmpres1.m128) == 0) && (_mm_movemask_epi8(cmpres2.m128) & 0xFF) == 0) break;
+      if ((_mm_movemask_epi8(cmpres1.m128) == 0) && (_mm_movemask_epi8(cmpres2.m128) == 0)) break;
       add6_to_pending(sieve, pending, pending_pos, opno1, opno2);
       nextopno1.m128 = _mm_and_si128(cmpres1.m128, p.m128);
       nextopno2.m128 = _mm_and_si128(cmpres2.m128, p.m128);
@@ -380,9 +382,9 @@ void process_sieve(uint8_t *sieve, uint32_t start_i, uint32_t end_i) {
     }
     opno1.m128 = _mm_sub_epi32(opno1.m128, opnomax.m128);
     opno2.m128 = _mm_sub_epi32(opno2.m128, opnomax.m128);
-    _mm_storeu_si128((__m128i*)&offsets[pno][0], opno1.m128);
-    offsets[pno][4] = opno2.v[0];
-    offsets[pno][5] = opno2.v[1];
+    offsets[pno][0] = opno1.v[0];
+    offsets[pno][1] = opno1.v[1];
+    _mm_storeu_si128((__m128i*)&offsets[pno][2], opno2.m128);
   }
 
   for (unsigned int i = 0; i < PENDING_SIZE; i++) {
@@ -466,6 +468,7 @@ void verify_thread() {
 	    nPrimes++;
 	    totalChainCount[nPrimes]++;
 	  }
+	  else if (!search_for_shares) break;
 	  int candidatesRemaining = 5-i;
 	  if ((nPrimes + candidatesRemaining) < 4) { continue; }
 	}
@@ -476,7 +479,7 @@ void verify_thread() {
 	 * still useful for benchmarking within a variant of the program with
 	 * all else held equal. */
 	
-	if (nPrimes < 4) continue;
+	if (nPrimes < (search_for_shares ? 4 : 6)) continue;
 	
 	mpz_set(z_temp, z_primorial);
 	mpz_mul_ui(z_temp, z_temp, job.testWork.loop);
@@ -895,6 +898,6 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	  }
 	}
 
-	DPRINTF("Total candidates evaluated: %d\n", countCandidates);
+	printf("Total candidates evaluated: %d\n", countCandidates);
 	mpz_clears(z_target, z_temp, z_remainderPrimorial, NULL);
 }

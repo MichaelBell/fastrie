@@ -152,7 +152,7 @@ typedef struct
 	uint8	job_id[STRATUM_JOB_ID_MAX_LEN+1]; // used to identify work in stratum
 }minerRiecoinBlock_t;
 
-void riecoin_init(uint64_t sieveMax, int numThreads);
+void riecoin_init(uint64_t sieveMax, int numThreads, bool solo);
 void riecoin_process(minerRiecoinBlock_t* block);
 
 void xptMiner_submitShare(minerRiecoinBlock_t* block, uint8* nOffset);
@@ -187,6 +187,7 @@ typedef struct
 	float donationPercent;
         uint64 sieveMax;
         int protocol;
+	bool solo;
 } commandlineInput_t;
 
 extern commandlineInput_t commandlineInput;

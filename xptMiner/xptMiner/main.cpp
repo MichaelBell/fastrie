@@ -170,7 +170,7 @@ void xptMiner_getWorkFromXPTConnection(xptClient_t* xptClient)
 	{
 		if( xptClient->algorithm == ALGORITHM_RIECOIN && algorithmInited[xptClient->algorithm] == 0 )
 		{
-		  riecoin_init(commandlineInput.sieveMax, commandlineInput.numThreads);
+		  riecoin_init(commandlineInput.sieveMax, commandlineInput.numThreads, commandlineInput.solo);
 			algorithmInited[xptClient->algorithm] = 1;
 		}
 	}
@@ -207,6 +207,10 @@ void xptMiner_getWorkFromXPTConnection(xptClient_t* xptClient)
 	{
 		miningStartTime = (uint32)time(NULL);
 		printf("[00:00:00] Start mining\n");
+	}
+	else
+	{
+		printf("           New block, height: %d\n", xptClient->blockWorkInfo.height);
 	}
 	workDataSource.height = xptClient->blockWorkInfo.height;
 	memcpy( workDataSource.job_id, xptClient->blockWorkInfo.job_id, sizeof(workDataSource.job_id) );
@@ -252,16 +256,16 @@ void xptMiner_xptQueryWorkLoop()
 
 				if( workDataSource.algorithm == ALGORITHM_RIECOIN )
 				{
-					float speedRate[7];  // for chain length[i]
+					float speedRate[7] = {0};  // for chain length[i]
 					// speed is represented as knumber/s (in steps of 0x1000)
 
 					if( passedSeconds > 5 )
 					{
-						for (int i = 2; i <=4; i++) {
-							speedRate[i] = (double)totalChainCount[i] * 4096.0 / (double) passedSeconds / 1000.0;
+						for (int i = 2; i <=5; i++) {
+							speedRate[i] = (double)totalChainCount[i] / (double)passedSeconds;
 						}
 					}
-					printf("[%02d:%02d:%02d] 2ch/s: %.4lf 3ch/s: %.4lf 4ch/s: %.4lf Shares total: %d / %d\n", (passedSeconds/3600)%60, (passedSeconds/60)%60, (passedSeconds)%60, speedRate[2], speedRate[3], speedRate[4], totalShareCount, totalShareCount-totalRejectedShareCount);
+					printf("[%02d:%02d:%02d] 2/s: %.4lf 3/m: %.4lf 4/m: %.4lf 5/h: %.4lf Shares: %d / %d\n", (passedSeconds/3600)%100, (passedSeconds/60)%60, (passedSeconds)%60, speedRate[2], speedRate[3]*60.0, speedRate[4]*60.0, speedRate[5]*3600.0, totalShareCount, totalShareCount-totalRejectedShareCount);
 					fflush(stdout);
 				}
 
@@ -387,6 +391,7 @@ void xptMiner_parseCommandline(int argc, char **argv)
 	commandlineInput.donationPercent = 2.0f;
 	commandlineInput.sieveMax = 900000000ULL;
 	commandlineInput.protocol = PROTOCOL_XPT;
+	commandlineInput.solo = false;
 
 	while( cIdx < argc )
 	{
@@ -480,6 +485,10 @@ void xptMiner_parseCommandline(int argc, char **argv)
 				exit(0);
 			}
 			cIdx++;
+		}
+		else if( memcmp(argument, "-solo", 6)==0 )
+		{
+			commandlineInput.solo = true;
 		}
 		else if( memcmp(argument, "-help", 6)==0 || memcmp(argument, "--help", 7)==0 )
 		{
