@@ -10,18 +10,18 @@ CFLAGS = -Wall -Wunused-function -Wextra -O3 -fomit-frame-pointer -g -fpermissiv
 OSVERSION := $(shell uname -s)
 LIBS = -lcrypto -lssl -pthread  -ldl -ljansson -lprimesieve
 ifeq ($(INT_LIB),mpir)
-       MPIR_DEF=-DUSE_MPIR
+       MPIR_DEF=-DUSE_MPIR -I../../mpir-3.0.0
        CFLAGS +=$(MPIR_DEF)
        CXXFLAGS +=$(MPIR_DEF)
-       LIBS+=-lmpir
+       LIBS+=libmpir.a
 else
        #LIBS+=-lgmp -lgmpxx
        LIBS+=libgmp.a libgmpxx.a
 endif
 ifeq ($(OSVERSION),Linux)
 	LIBS += -lrt
-	ARCHFLAGS = -march=sandybridge -mtune=sandybridge -mno-avx
-#	ARCHFLAGS = -march=corei7-avx
+	ARCHFLAGS = -march=sandybridge -mtune=sandybridge -m64
+	#ARCHFLAGS = -march=corei7-avx -mtune=sandybridge -m64
 #	ARCHFLAGS = -march=corei7 -mno-avx
 endif
 

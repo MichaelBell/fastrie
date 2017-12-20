@@ -17,6 +17,8 @@ union xmmreg
 
 #define DEBUG 0
 
+#define DEBUG_TIMING 0
+
 #if DEBUG
 #define DPRINTF(fmt, args...) do { printf("line %d: " fmt, __LINE__, ##args); fflush(stdout); } while(0)
 #else
@@ -396,6 +398,11 @@ void process_sieve(uint8_t *sieve, uint32_t start_i, uint32_t end_i) {
   }
 }
 
+#if DEBUG_TIMING
+volatile float modTime = 0.f;
+volatile float sieveTime = 0.f;
+volatile float checkTime = 0.f;
+#endif
 
 void verify_thread() {
   /* Check for a prime cluster.  A "share" on ypool is any
@@ -409,13 +416,17 @@ void verify_thread() {
    * for the one-in-a-whatever case that Fermat is wrong.
    */
 
-  mpz_t z_ft_r, z_ft_n, z_temp, z_temp2;
-  mpz_inits(z_ft_r, z_ft_n, z_temp, z_temp2, NULL);
+  mpz_t z_ft_r, z_ft_n, z_temp, z_temp2, z_ploop;
+  mpz_inits(z_ft_r, z_ft_n, z_temp, z_temp2, z_ploop, NULL);
   mpz_t z_ft_b;
   mpz_init_set_ui(z_ft_b, 2);
 
   while (1) {
     auto job = verifyWorkQueue.pop_front();
+
+#if DEBUG_TIMING
+    auto start = std::chrono::system_clock::now();
+#endif
 
     if (job.type == TYPE_MOD) {
       update_remainders(job.modWork.start, job.modWork.end);
@@ -423,6 +434,13 @@ void verify_thread() {
 
       workerDoneQueue.push_back(1);
       DPRINTF("wdq-push-mod %d-%d done\n", job.modWork.start, job.modWork.end);
+
+#if DEBUG_TIMING
+      auto end = std::chrono::system_clock::now();
+      auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+      modTime += dur * 0.000001f;
+#endif
+
       continue;
     }
 
@@ -431,21 +449,25 @@ void verify_thread() {
       DPRINTF("wdq-push-sieve %d-%d start\n", job.modWork.start, job.modWork.end);
       workerDoneQueue.push_back(1);
       DPRINTF("wdq-push-sieve %d-%d done\n", job.modWork.start, job.modWork.end);
+
+#if DEBUG_TIMING
+      auto end = std::chrono::system_clock::now();
+      auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+      sieveTime += dur * 0.000001f;
+#endif
+
       continue;
     }
     /* fallthrough:  job.type == TYPE_CHECK */
     if (job.type == TYPE_CHECK) {
+      mpz_mul_ui(z_ploop, z_primorial, job.testWork.loop * riecoin_sieveSize);
+      mpz_add(z_ploop, z_ploop, z_verify_remainderPrimorial);
+      mpz_add(z_ploop, z_ploop, z_verify_target);
       
       for (unsigned int idx = 0; idx < job.testWork.n_indexes; idx++) {
 	int nPrimes = 0;
-	mpz_set(z_temp, z_primorial);
-	mpz_mul_ui(z_temp, z_temp, job.testWork.loop);
-	mpz_mul_ui(z_temp, z_temp, riecoin_sieveSize);
-	mpz_set(z_temp2, z_primorial);
-	mpz_mul_ui(z_temp2, z_temp2, job.testWork.indexes[idx]);
-	mpz_add(z_temp, z_temp, z_temp2);
-	mpz_add(z_temp, z_temp, z_verify_remainderPrimorial);
-	mpz_add(z_temp, z_temp, z_verify_target);
+	mpz_mul_ui(z_temp, z_primorial, job.testWork.indexes[idx]);
+	mpz_add(z_temp, z_temp, z_ploop);
 	
 	mpz_sub_ui(z_ft_n, z_temp, 1);
 	mpz_powm(z_ft_r, z_ft_b, z_ft_n, z_temp);
@@ -454,6 +476,7 @@ void verify_thread() {
 	}
 	
 	nPrimes++;
+	totalChainCount[nPrimes]++;
 	
 	/* New definition of shares:  Any 4+ valid primes.  Search method 
 	 * is for 1st + any 3 to avoid doing too much primality testing.
@@ -523,7 +546,12 @@ void verify_thread() {
       DPRINTF("tdq-push start\n");
       testDoneQueue.push_back(1);
       DPRINTF("tdq-push done\n");
-      
+
+#if DEBUG_TIMING
+      auto end = std::chrono::system_clock::now();
+      auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+      checkTime += dur * 0.000001f;
+#endif
     }
   }
 }
@@ -899,5 +927,9 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	}
 
 	printf("Total candidates evaluated: %d\n", countCandidates);
+#if DEBUG_TIMING
+	float sumTime = (modTime + sieveTime + checkTime) * .01f;
+	printf("Thread timing: %.3f %.3f %.3f\n", modTime / sumTime, sieveTime / sumTime, checkTime / sumTime);
+#endif
 	mpz_clears(z_target, z_temp, z_remainderPrimorial, NULL);
 }
