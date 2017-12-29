@@ -17,7 +17,7 @@ union xmmreg
 
 #define DEBUG 0
 
-#define DEBUG_TIMING 0
+#define DEBUG_TIMING 1
 
 #if DEBUG
 #define DPRINTF(fmt, args...) do { printf("line %d: " fmt, __LINE__, ##args); fflush(stdout); } while(0)
@@ -323,28 +323,51 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
       is_once_only = true;
     }
      
-    uint32_t inverted = inverts[i];
-    for (uint32_t f = 0; f < 6; f++) {
-      remainder += primeTupleOffset[f];
-      if (remainder > p) {
-	remainder -= p;
+    uint64_t inverted = inverts[i];
+    uint64_t pa = p - remainder;
+    uint64_t index = pa*inverted;
+    index %= p;
+    uint64_t inverted2 = inverted << 1;
+    if (inverted2 > p) inverted2 -= p;
+    uint64_t inverted4 = inverted2 << 1;
+    if (inverted4 > p) inverted4 -= p;
+    if (!is_once_only) {
+      offsets[i][0] = index;
+      if (index < inverted4) index += p;
+      index -= inverted4;
+      offsets[i][1] = index;
+      for (uint32_t f = 2; f < 6; f += 2)
+      {
+        if (index < inverted2) index += p;
+        index -= inverted2;
+        offsets[i][f] = index;
+        if (index < inverted4) index += p;
+        index -= inverted4;
+        offsets[i][f+1] = index;
       }
-      uint64_t pa = p-remainder;
-      uint64_t index = pa*inverted;
-      index %= p;
-      if (!is_once_only) {
-	offsets[i][f] = index;
-      }
-      else {
-	if (index < max_increments) {
-	  offset_stack[n_offsets++] = index;
-	  if (n_offsets >= OFFSET_STACK_SIZE) {
-	    put_offsets_in_segments(offset_stack, n_offsets);
-	    n_offsets = 0;
-	  }
+    }
+    else {
+#define MAYBE_ADD_INDEX() \
+	if (index < max_increments) { \
+	  offset_stack[n_offsets++] = index; \
+	  if (n_offsets >= OFFSET_STACK_SIZE) { \
+	    put_offsets_in_segments(offset_stack, n_offsets); \
+	    n_offsets = 0; \
+	  } \
 	}
+      MAYBE_ADD_INDEX();
+      if (index < inverted4) index += p;
+      index -= inverted4;
+      MAYBE_ADD_INDEX();
+      for (uint32_t f = 0; f < 2; ++f)
+      {
+        if (index < inverted2) index += p;
+        index -= inverted2;
+        MAYBE_ADD_INDEX();
+        if (index < inverted4) index += p;
+        index -= inverted4;
+        MAYBE_ADD_INDEX();
       }
-
     }
   }
   if (n_offsets > 0) {
