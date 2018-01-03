@@ -17,7 +17,7 @@ union xmmreg
 
 #define DEBUG 0
 
-#define DEBUG_TIMING 0
+#define DEBUG_TIMING 1
 
 #if DEBUG
 #define DPRINTF(fmt, args...) do { printf("line %d: " fmt, __LINE__, ##args); fflush(stdout); } while(0)
@@ -58,6 +58,8 @@ static uint32 primeTupleOffset[6] = {0, 4, 2, 4, 2, 4};
 static constexpr uint32_t riecoin_denseLimit = 16384; /* A few cachelines */
 uint32_t* riecoin_primeTestTable;
 uint32_t riecoin_primeTestSize;
+uint32_t riecoin_primeTestDense = 0;
+uint32_t riecoin_primeTestSparse;
 uint32_t riecoin_primeTestStoreOffsetsSize;
 uint32_t *inverts;
 mpz_t  z_primorial;
@@ -156,6 +158,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	mpz_clear(z_p);
 	mpz_clear(z_tmp);
 
+
 	uint64_t high_segment_entries = 0;
 	double high_floats = 0.0;
 	riecoin_primeTestStoreOffsetsSize = 0;
@@ -179,6 +182,8 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  perror("could not malloc segment_counts");
 	  exit(-1);
 	}
+
+	riecoin_primeTestSize -= 3;
 }
 
 typedef uint32_t sixoff[6];
@@ -286,9 +291,24 @@ inline void add6_to_pending(uint8_t *sieve, uint32_t pending[PENDING_SIZE], uint
 #undef ADD_REG
 }
 
-void put_offsets_in_segments(uint32_t *offsets, int n_offsets) {
+void maybe_put_offsets_in_segments(uint32_t *offsets, size_t n_offsets) {
   EnterCriticalSection(&bucket_lock);
-  for (int i = 0; i < n_offsets; i++) {
+  for (size_t i = 0; i < n_offsets; i++) {
+    uint32_t index = offsets[i];
+    if (index == 0xffffffff) continue;
+    uint32_t segment = index>>riecoin_sieveBits;
+    uint32_t sc = segment_counts[segment]++;
+    if (sc >= num_entries_per_segment) { 
+      printf("EEEEK segment %u  %u with index %u is > %u\n", segment, sc, index, num_entries_per_segment); exit(-1);
+    }
+    segment_hits[segment][sc] = index & (riecoin_sieveSize-1);
+  }
+  LeaveCriticalSection(&bucket_lock);
+}
+
+void put_offsets_in_segments(uint32_t *offsets, size_t n_offsets) {
+  EnterCriticalSection(&bucket_lock);
+  for (size_t i = 0; i < n_offsets; i++) {
     uint32_t index = offsets[i];
     uint32_t segment = index>>riecoin_sieveBits;
     uint32_t sc = segment_counts[segment]++;
@@ -300,17 +320,129 @@ void put_offsets_in_segments(uint32_t *offsets, int n_offsets) {
   LeaveCriticalSection(&bucket_lock);
 }
 
-thread_local uint32_t *offset_stack = NULL;
+static const size_t OFFSET_STACK_SIZE = 16384;
+thread_local uint32_t *t_offset_stack = NULL;
 
-void update_remainders(uint32_t start_i, uint32_t end_i) {
+void update_remainders_once_only(uint32_t start_i, uint32_t end_i)
+{
   mpz_t tar;
   mpz_init_set(tar, z_verify_target);
   mpz_add(tar, tar, z_verify_remainderPrimorial);
-  int n_offsets = 0;
-  static const int OFFSET_STACK_SIZE = 16384;
-  if (offset_stack == NULL) {
-    offset_stack = (uint32_t *)malloc(sizeof(uint32_t) * OFFSET_STACK_SIZE);
+  uint32_t *offset_stack = t_offset_stack;
+  size_t n_offsets = 0;
+
+  xmmreg a_p, a_index, a_mask, a_inverted, a_inverted2, a_inverted4;
+  xmmreg b_p, b_index, b_mask, b_inverted, b_inverted2, b_inverted4;
+  xmmreg maxincr;
+  maxincr.m128 = _mm_set1_epi32(max_increments);
+
+  for (auto i = start_i; i < end_i; i+=8) {
+    if (n_offsets + 8 * 6 > OFFSET_STACK_SIZE)
+    {
+      maybe_put_offsets_in_segments(offset_stack, n_offsets);
+      n_offsets = 0;
+    }
+
+    for (uint32_t j = 0; j < 4; ++j) {
+      a_p.v[j] = riecoin_primeTestTable[i+j];
+        b_p.v[j] = riecoin_primeTestTable[i+j+4];
+      uint32_t a_remainder = mpz_tdiv_ui(tar, a_p.v[j]);
+        uint32_t b_remainder = mpz_tdiv_ui(tar, b_p.v[j]);
+
+      uint64_t a_pa = a_p.v[j] - a_remainder;
+        uint64_t b_pa = b_p.v[j] - b_remainder;
+      uint64_t a_index64 = a_pa*inverts[i+j];
+        uint64_t b_index64 = b_pa*inverts[i+j+4];
+      a_index64 %= a_p.v[j];
+        b_index64 %= b_p.v[j];
+      a_index.v[j] = (uint32_t)a_index64;
+        b_index.v[j] = (uint32_t)b_index64;
+    }
+
+    a_inverted.m128 = _mm_loadu_si128((__m128i*)&inverts[i]);
+      b_inverted.m128 = _mm_loadu_si128((__m128i*)&inverts[i+4]);
+
+    // inverted2 = (2*inverted)%p
+    a_inverted2.m128 = _mm_add_epi32(a_inverted.m128, a_inverted.m128);
+      b_inverted2.m128 = _mm_add_epi32(b_inverted.m128, b_inverted.m128);
+    a_mask.m128 = _mm_cmpeq_epi32(a_inverted.m128, _mm_max_epu32(a_inverted.m128, a_inverted2.m128)); // inverted >= inverted2 => carry
+      b_mask.m128 = _mm_cmpeq_epi32(b_inverted.m128, _mm_max_epu32(b_inverted.m128, b_inverted2.m128));
+    a_mask.m128 = _mm_or_si128(a_mask.m128, _mm_cmpeq_epi32(a_inverted2.m128, _mm_max_epu32(a_p.m128, a_inverted2.m128))); // inverted2 >= p
+      b_mask.m128 = _mm_or_si128(b_mask.m128, _mm_cmpeq_epi32(b_inverted2.m128, _mm_max_epu32(b_p.m128, b_inverted2.m128)));
+    a_mask.m128 = _mm_and_si128(a_mask.m128, a_p.m128);
+      b_mask.m128 = _mm_and_si128(b_mask.m128, b_p.m128);
+    a_inverted2.m128 = _mm_sub_epi32(a_inverted2.m128, a_mask.m128);
+      b_inverted2.m128 = _mm_sub_epi32(b_inverted2.m128, b_mask.m128);
+
+    // inverted4 = (2*inverted2)%p
+    a_inverted4.m128 = _mm_add_epi32(a_inverted2.m128, a_inverted2.m128);
+      b_inverted4.m128 = _mm_add_epi32(b_inverted2.m128, b_inverted2.m128);
+    a_mask.m128 = _mm_cmpeq_epi32(a_inverted2.m128, _mm_max_epu32(a_inverted2.m128, a_inverted4.m128)); // inverted2 >= inverted4 => carry
+      b_mask.m128 = _mm_cmpeq_epi32(b_inverted2.m128, _mm_max_epu32(b_inverted2.m128, b_inverted4.m128));
+    a_mask.m128 = _mm_or_si128(a_mask.m128, _mm_cmpeq_epi32(a_inverted4.m128, _mm_max_epu32(a_p.m128, a_inverted4.m128))); // inverted4 >= p
+      b_mask.m128 = _mm_or_si128(b_mask.m128, _mm_cmpeq_epi32(b_inverted4.m128, _mm_max_epu32(b_p.m128, b_inverted4.m128)));
+    a_mask.m128 = _mm_and_si128(a_mask.m128, a_p.m128);
+      b_mask.m128 = _mm_and_si128(b_mask.m128, b_p.m128);
+    a_inverted4.m128 = _mm_sub_epi32(a_inverted4.m128, a_mask.m128);
+      b_inverted4.m128 = _mm_sub_epi32(b_inverted4.m128, b_mask.m128);
+
+#define STORE_INDEX() \
+    a_mask.m128 = _mm_cmpeq_epi32(a_index.m128, _mm_max_epu32(a_index.m128, maxincr.m128));  /* 0xffffffff if index >= max_increments  */ \
+      b_mask.m128 = _mm_cmpeq_epi32(b_index.m128, _mm_max_epu32(b_index.m128, maxincr.m128)); \
+    _mm_store_si128((__m128i*)&offset_stack[n_offsets], _mm_or_si128(a_mask.m128, a_index.m128)); \
+      _mm_store_si128((__m128i*)&offset_stack[n_offsets+4], _mm_or_si128(b_mask.m128, b_index.m128)); \
+    n_offsets += 8;
+    // if (index < max_increments) offset_stack[n_offsets++] = index;
+    STORE_INDEX();
+
+#define SUB_MOD_P(a_inv, b_inv) \
+    a_mask.m128 = _mm_cmpeq_epi32(a_inv.m128, _mm_max_epu32(a_index.m128, a_inv.m128)); \
+      b_mask.m128 = _mm_cmpeq_epi32(b_inv.m128, _mm_max_epu32(b_index.m128, b_inv.m128)); \
+    a_index.m128 = _mm_add_epi32(a_index.m128, _mm_and_si128(a_mask.m128, a_p.m128)); \
+      b_index.m128 = _mm_add_epi32(b_index.m128, _mm_and_si128(b_mask.m128, b_p.m128)); \
+    a_index.m128 = _mm_sub_epi32(a_index.m128, a_inv.m128); \
+      b_index.m128 = _mm_sub_epi32(b_index.m128, b_inv.m128); \
+    // if (index < inverted4) index += p;
+    // index -= inverted4;
+    SUB_MOD_P(a_inverted4, b_inverted4);
+    STORE_INDEX();
+    
+    SUB_MOD_P(a_inverted2, b_inverted2);
+    STORE_INDEX();
+
+    SUB_MOD_P(a_inverted4, b_inverted4);
+    STORE_INDEX();
+    
+    SUB_MOD_P(a_inverted2, b_inverted2);
+    STORE_INDEX();
+
+    SUB_MOD_P(a_inverted4, b_inverted4);
+    STORE_INDEX();
+#undef SUB_MOD_P
+#undef STORE_INDEX
   }
+
+  maybe_put_offsets_in_segments(offset_stack, n_offsets);
+
+  mpz_clear(tar);
+}
+
+void update_remainders(uint32_t start_i, uint32_t end_i) {
+  if (t_offset_stack == NULL) {
+    t_offset_stack = (uint32_t *)aligned_alloc(16, sizeof(uint32_t) * OFFSET_STACK_SIZE);
+  }
+  uint32_t *offset_stack = t_offset_stack;
+
+  if (riecoin_primeTestTable[start_i] >= max_increments)
+  {
+    update_remainders_once_only(start_i, end_i);
+    return;
+  }
+
+  mpz_t tar;
+  mpz_init_set(tar, z_verify_target);
+  mpz_add(tar, tar, z_verify_remainderPrimorial);
+  size_t n_offsets = 0;
 
   for (auto i = start_i; i < end_i; i++) {
     uint32_t p = riecoin_primeTestTable[i];
@@ -704,6 +836,9 @@ void riecoin_process(minerRiecoinBlock_t* block)
 
 
 	uint32_t incr = riecoin_primeTestSize/128;
+	uint32_t round = 4 - (incr & 0x3);
+        incr += round;
+
 	riecoinPrimeTestWork wi;
 	//	  printf("Boss is working2\n");fflush(stdout);
 	wi.type = TYPE_MOD;
@@ -726,20 +861,29 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	}
 	DPRINTF("master wdq-wait complete done\n");
 
-	//printf("primeIndex: %d  is %d\n", primeIndex, riecoin_primeTestTable[primeIndex]);
-	/* XXX - move this all into init - it's only done once */
-	for( ; primeIndex < riecoin_primeTestSize; primeIndex++)
+	if (riecoin_primeTestDense == 0)
 	{
-	  uint32 p = riecoin_primeTestTable[primeIndex];
-	  if (p < riecoin_denseLimit) {
-	    n_dense++;
-	  } else if (p < max_increments) {
-	    n_sparse++;
+	  //printf("primeIndex: %d  is %d\n", primeIndex, riecoin_primeTestTable[primeIndex]);
+	  for( ; primeIndex < riecoin_primeTestSize; primeIndex++)
+	  {
+	    uint32 p = riecoin_primeTestTable[primeIndex];
+	    if (p < riecoin_denseLimit) {
+	      n_dense++;
+	    } else if (p < max_increments) {
+	      n_sparse++;
+	    }
 	  }
+	  round = 8 - (n_dense & 0x7);
+	  n_dense += round;
+	  n_sparse -= round;
+	  riecoin_primeTestDense = n_dense;
+	  riecoin_primeTestSparse = n_sparse;
 	}
-	uint32_t round = 8 - (n_dense & 0x7);
-	n_dense += round;
-	n_sparse -= round;
+	else
+	{
+	  n_dense = riecoin_primeTestDense;
+	  n_sparse = riecoin_primeTestSparse;
+	}
 
 	//printf("\n");
 #if DEBUG
