@@ -578,6 +578,10 @@ void verify_thread() {
 
 void riecoin_process(minerRiecoinBlock_t* block)
 {
+#if DEDUB_TIMING
+  modTime = sieveTime = checkTime = 0;
+#endif
+
 	uint32 searchBits = block->targetCompact;
 
 	if (!there_is_a_master) {
