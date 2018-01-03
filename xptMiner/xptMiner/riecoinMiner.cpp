@@ -17,7 +17,7 @@ union xmmreg
 
 #define DEBUG 0
 
-#define DEBUG_TIMING 1
+#define DEBUG_TIMING 0
 
 #if DEBUG
 #define DPRINTF(fmt, args...) do { printf("line %d: " fmt, __LINE__, ##args); fflush(stdout); } while(0)
@@ -521,7 +521,7 @@ void verify_thread() {
 	 * still useful for benchmarking within a variant of the program with
 	 * all else held equal. */
 	
-	if (nPrimes < (search_for_shares ? 4 : 6)) continue;
+	if (nPrimes < 4) continue;
 	
 	mpz_set(z_temp, z_primorial);
 	mpz_mul_ui(z_temp, z_temp, job.testWork.loop);

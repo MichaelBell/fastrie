@@ -205,7 +205,7 @@ void xptMiner_getWorkFromXPTConnection(xptClient_t* xptClient)
 	// set blockheight last since it triggers reload of work
 	if( workDataSource.height == 0 && xptClient->blockWorkInfo.height != 0 )
 	{
-		miningStartTime = (uint32)time(NULL);
+		if (miningStartTime == 0) miningStartTime = (uint32)time(NULL);
 		printf("[00:00:00] Start mining\n");
 	}
 	else
@@ -238,6 +238,7 @@ void xptMiner_xptQueryWorkLoop()
 	// init xpt connection object once
 	xptClient = xptMiner_initateNewXptConnectionObject();
 	uint32 timerPrintDetails = getTimeMilliseconds() + 8000;
+	for (int i = 0; i < 7; i++) totalChainCount[i] = 0;
 
 	if(minerSettings.requestTarget.donationPercent > 0.1f)
 	{
@@ -265,7 +266,7 @@ void xptMiner_xptQueryWorkLoop()
 							speedRate[i] = (double)totalChainCount[i] / (double)passedSeconds;
 						}
 					}
-					printf("[%02d:%02d:%02d] 1/s: %.4lf 2/s: %.4lf 3/m: %.4lf 4/m: %.4lf 5/h: %.4lf Shares: %d / %d\n", (passedSeconds/3600)%100, (passedSeconds/60)%60, (passedSeconds)%60, speedRate[1], speedRate[2], speedRate[3]*60.0, speedRate[4]*60.0, speedRate[5]*3600.0, totalShareCount, totalShareCount-totalRejectedShareCount);
+					printf("[%02d:%02d:%02d] 1/s: %.4lf 2/s: %.4lf 3/m: %.4lf 4/m: %.4lf 5/h: %.4lf 6: %d Shares: %d / %d\n", (passedSeconds/3600)%100, (passedSeconds/60)%60, (passedSeconds)%60, speedRate[1], speedRate[2], speedRate[3]*60.0, speedRate[4]*60.0, speedRate[5]*3600.0, totalChainCount[6], totalShareCount, totalShareCount-totalRejectedShareCount);
 					fflush(stdout);
 				}
 
@@ -353,7 +354,6 @@ void xptMiner_xptQueryWorkLoop()
 				{
 					printf("Connected to server using x.pushthrough(xpt) protocol\n");
 				}
-				for (int i = 0; i < 7; i++) totalChainCount[i] = 0;
 			}
 			Sleep(1);
 		}
