@@ -7,13 +7,6 @@
 
 #include "gmp_util.h"
 
-#define USE_LIBDIVIDE 0
-#if USE_LIBDIVIDE
-#define LIBDIVIDE_USE_SSE2 1
-#define LIBDIVIDE_USE_SSE4_1 1
-#include "libdivide.h"
-#endif
-
 #include <immintrin.h>
 
 extern "C" {
@@ -78,10 +71,6 @@ uint32_t riecoin_primeTestStoreOffsetsSize;
 uint32_t *inverts;
 mpz_t  z_primorial;
 uint32_t startingPrimeIndex;
-
-#if USE_LIBDIVIDE
-libdivide::divider<uint64_t>* riecoin_primeDividers;
-#endif
 
 mp_limb_t* prime_mod_pre;
 
@@ -163,9 +152,6 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 #endif
 	inverts = (uint32_t *)calloc(sizeof(uint32_t), riecoin_primeTestSize);
 	prime_mod_pre = (mp_limb_t*)malloc(sizeof(mp_limb_t) * 7 * riecoin_primeTestSize);
-#if USE_LIBDIVIDE
-	riecoin_primeDividers = (libdivide::divider<uint64_t>*)malloc(sizeof(libdivide::divider<uint64_t>) * riecoin_primeTestSize);
-#endif
 	if (inverts == NULL) {
 	  perror("could not malloc inverts");
 	  exit(-1);
@@ -179,9 +165,6 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  mpz_invert(z_tmp, z_primorial, z_p);
 	  inverts[i] = mpz_get_ui(z_tmp);
           rie_mod_1s_4p_cps(&prime_mod_pre[i*7], riecoin_primeTestTable[i]);
-#if USE_LIBDIVIDE
-	  new (&riecoin_primeDividers[i]) libdivide::divider<uint64_t>(riecoin_primeTestTable[i]);
-#endif
 	}
 	mpz_clear(z_p);
 	mpz_clear(z_tmp);
@@ -348,13 +331,6 @@ void put_offsets_in_segments(uint32_t *offsets, size_t n_offsets) {
   LeaveCriticalSection(&bucket_lock);
 }
 
-#if USE_LIBDIVIDE
-inline uint64_t libdivide_mod(uint64_t n, uint32_t prime, libdivide::divider<uint64_t>& p) {
-  uint64_t t = n / p;
-  return n - t * prime;
-}
-#endif
-
 static const size_t OFFSET_STACK_SIZE = 16384;
 thread_local uint32_t *t_offset_stack = NULL;
 
@@ -509,10 +485,6 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
     uint64_t inverted = inverts[i];
     uint64_t pa = ps - remainder;
     uint64_t index;
-#if USE_LIBDIVIDE
-    uint64_t index = (pa >> cnt)*inverted;
-    index = libdivide_mod(index, p, riecoin_primeDividers[i]);
-#else
     {
       uint64_t r, nh, nl;
       umul_ppmm(nh, nl, pa, inverted);
@@ -520,7 +492,6 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
       // if ((r >> cnt) != ((pa >> cnt)*inverted) % p) {  printf("Remainder check fail\n"); exit(-1); }
       index = r >> cnt;
     }
-#endif
     uint64_t inverted2 = inverted << 1;
     if (inverted2 >= p) inverted2 -= p;
     uint64_t inverted4 = inverted2 << 1;
