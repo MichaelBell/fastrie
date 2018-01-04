@@ -5,9 +5,19 @@
 #include <math.h>
 #include <primesieve.hpp>
 
+#define USE_LIBDIVIDE 0
+#if USE_LIBDIVIDE
+#define LIBDIVIDE_USE_SSE2 1
+#define LIBDIVIDE_USE_SSE4_1 1
 #include "libdivide.h"
+#endif
 
 #include <immintrin.h>
+
+extern "C" {
+void __gmpn_mod_1s_4p_cps (mp_limb_t cps[7], mp_limb_t b);
+mp_limb_t __gmpn_mod_1s_4p (mp_srcptr ap, mp_size_t n, mp_limb_t b, const mp_limb_t cps[7]);
+}
 
 union xmmreg
 {
@@ -67,7 +77,11 @@ uint32_t *inverts;
 mpz_t  z_primorial;
 uint32_t startingPrimeIndex;
 
+#if USE_LIBDIVIDE
 libdivide::divider<uint64_t>* riecoin_primeDividers;
+#endif
+
+mp_limb_t* prime_mod_pre;
 
 static constexpr int WORK_INDEXES = 64;
 uint32_t *segment_counts;
@@ -146,7 +160,10 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	gmp_printf("z_primorial: %Zd\n", z_primorial);
 #endif
 	inverts = (uint32_t *)calloc(sizeof(uint32_t), riecoin_primeTestSize);
+	prime_mod_pre = (mp_limb_t*)malloc(sizeof(mp_limb_t) * 7 * riecoin_primeTestSize);
+#if USE_LIBDIVIDE
 	riecoin_primeDividers = (libdivide::divider<uint64_t>*)malloc(sizeof(libdivide::divider<uint64_t>) * riecoin_primeTestSize);
+#endif
 	if (inverts == NULL) {
 	  perror("could not malloc inverts");
 	  exit(-1);
@@ -159,7 +176,10 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  mpz_set_ui(z_p, riecoin_primeTestTable[i]);
 	  mpz_invert(z_tmp, z_primorial, z_p);
 	  inverts[i] = mpz_get_ui(z_tmp);
+          __gmpn_mod_1s_4p_cps(&prime_mod_pre[i*7], riecoin_primeTestTable[i]);
+#if USE_LIBDIVIDE
 	  new (&riecoin_primeDividers[i]) libdivide::divider<uint64_t>(riecoin_primeTestTable[i]);
+#endif
 	}
 	mpz_clear(z_p);
 	mpz_clear(z_tmp);
@@ -189,7 +209,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  exit(-1);
 	}
 
-	riecoin_primeTestSize -= 7;
+	//riecoin_primeTestSize -= 7;
 }
 
 typedef uint32_t sixoff[6];
@@ -326,9 +346,17 @@ void put_offsets_in_segments(uint32_t *offsets, size_t n_offsets) {
   LeaveCriticalSection(&bucket_lock);
 }
 
+#if USE_LIBDIVIDE
+inline uint64_t libdivide_mod(uint64_t n, uint32_t prime, libdivide::divider<uint64_t>& p) {
+  uint64_t t = n / p;
+  return n - t * prime;
+}
+#endif
+
 static const size_t OFFSET_STACK_SIZE = 16384;
 thread_local uint32_t *t_offset_stack = NULL;
 
+#if 0
 void update_remainders_once_only(uint32_t start_i, uint32_t end_i)
 {
   mpz_t tar;
@@ -442,6 +470,7 @@ void update_remainders_once_only(uint32_t start_i, uint32_t end_i)
 
   mpz_clear(tar);
 }
+#endif
 
 void update_remainders(uint32_t start_i, uint32_t end_i) {
   if (t_offset_stack == NULL) {
@@ -463,8 +492,9 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
   size_t n_offsets = 0;
 
   for (auto i = start_i; i < end_i; i++) {
-    uint32_t p = riecoin_primeTestTable[i];
-    uint32_t remainder = mpz_tdiv_ui(tar, p);
+    uint64_t p = riecoin_primeTestTable[i];
+    uint64_t remainder = __gmpn_mod_1s_4p(tar->_mp_d, tar->_mp_size, p << prime_mod_pre[i*7 + 1], &prime_mod_pre[i*7]); 
+    //if (remainder != mpz_tdiv_ui(tar, p)) { printf("Remainder check fail\n"); exit(-1); }
     bool is_once_only = false;
 
     /* Also update the offsets unless once only */
@@ -475,13 +505,15 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
     uint64_t inverted = inverts[i];
     uint64_t pa = p - remainder;
     uint64_t index = pa*inverted;
-    //index %= p;
-    uint64_t t = index / riecoin_primeDividers[i];
-    index = index - t * p;
+#if USE_LIBDIVIDE
+    index = libdivide_mod(index, p, riecoin_primeDividers[i]);
+#else
+    index %= p;
+#endif
     uint64_t inverted2 = inverted << 1;
-    if (inverted2 > p) inverted2 -= p;
+    if (inverted2 >= p) inverted2 -= p;
     uint64_t inverted4 = inverted2 << 1;
-    if (inverted4 > p) inverted4 -= p;
+    if (inverted4 >= p) inverted4 -= p;
     if (!is_once_only) {
       offsets[i][0] = index;
       if (index < inverted4) index += p;
