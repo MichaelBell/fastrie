@@ -5,6 +5,8 @@
 #include <math.h>
 #include <primesieve.hpp>
 
+#include "libdivide.h"
+
 #include <immintrin.h>
 
 union xmmreg
@@ -64,6 +66,8 @@ uint32_t riecoin_primeTestStoreOffsetsSize;
 uint32_t *inverts;
 mpz_t  z_primorial;
 uint32_t startingPrimeIndex;
+
+libdivide::divider<uint64_t>* riecoin_primeDividers;
 
 static constexpr int WORK_INDEXES = 64;
 uint32_t *segment_counts;
@@ -142,6 +146,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	gmp_printf("z_primorial: %Zd\n", z_primorial);
 #endif
 	inverts = (uint32_t *)calloc(sizeof(uint32_t), riecoin_primeTestSize);
+	riecoin_primeDividers = (libdivide::divider<uint64_t>*)malloc(sizeof(libdivide::divider<uint64_t>) * riecoin_primeTestSize);
 	if (inverts == NULL) {
 	  perror("could not malloc inverts");
 	  exit(-1);
@@ -154,6 +159,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  mpz_set_ui(z_p, riecoin_primeTestTable[i]);
 	  mpz_invert(z_tmp, z_primorial, z_p);
 	  inverts[i] = mpz_get_ui(z_tmp);
+	  new (&riecoin_primeDividers[i]) libdivide::divider<uint64_t>(riecoin_primeTestTable[i]);
 	}
 	mpz_clear(z_p);
 	mpz_clear(z_tmp);
@@ -443,7 +449,7 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
   }
   uint32_t *offset_stack = t_offset_stack;
 
-#if 1
+#if 0
   if (riecoin_primeTestTable[start_i] >= max_increments)
   {
     update_remainders_once_only(start_i, end_i);
@@ -469,7 +475,9 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
     uint64_t inverted = inverts[i];
     uint64_t pa = p - remainder;
     uint64_t index = pa*inverted;
-    index %= p;
+    //index %= p;
+    uint64_t t = index / riecoin_primeDividers[i];
+    index = index - t * p;
     uint64_t inverted2 = inverted << 1;
     if (inverted2 > p) inverted2 -= p;
     uint64_t inverted4 = inverted2 << 1;
