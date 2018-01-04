@@ -5,6 +5,8 @@
 #include <math.h>
 #include <primesieve.hpp>
 
+#include "gmp_util.h"
+
 #define USE_LIBDIVIDE 0
 #if USE_LIBDIVIDE
 #define LIBDIVIDE_USE_SSE2 1
@@ -15,8 +17,8 @@
 #include <immintrin.h>
 
 extern "C" {
-void __gmpn_mod_1s_4p_cps (mp_limb_t cps[7], mp_limb_t b);
-mp_limb_t __gmpn_mod_1s_4p (mp_srcptr ap, mp_size_t n, mp_limb_t b, const mp_limb_t cps[7]);
+void rie_mod_1s_4p_cps (mp_limb_t cps[7], mp_limb_t b);
+mp_limb_t rie_mod_1s_4p (mp_srcptr ap, mp_size_t n, mp_limb_t b, const mp_limb_t cps[7]);
 }
 
 union xmmreg
@@ -176,7 +178,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  mpz_set_ui(z_p, riecoin_primeTestTable[i]);
 	  mpz_invert(z_tmp, z_primorial, z_p);
 	  inverts[i] = mpz_get_ui(z_tmp);
-          __gmpn_mod_1s_4p_cps(&prime_mod_pre[i*7], riecoin_primeTestTable[i]);
+          rie_mod_1s_4p_cps(&prime_mod_pre[i*7], riecoin_primeTestTable[i]);
 #if USE_LIBDIVIDE
 	  new (&riecoin_primeDividers[i]) libdivide::divider<uint64_t>(riecoin_primeTestTable[i]);
 #endif
@@ -493,7 +495,9 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
 
   for (auto i = start_i; i < end_i; i++) {
     uint64_t p = riecoin_primeTestTable[i];
-    uint64_t remainder = __gmpn_mod_1s_4p(tar->_mp_d, tar->_mp_size, p << prime_mod_pre[i*7 + 1], &prime_mod_pre[i*7]); 
+    uint64_t cnt = prime_mod_pre[i*7 + 1];
+    uint64_t ps = p << cnt;
+    uint64_t remainder = rie_mod_1s_4p(tar->_mp_d, tar->_mp_size, ps, &prime_mod_pre[i*7]); 
     //if (remainder != mpz_tdiv_ui(tar, p)) { printf("Remainder check fail\n"); exit(-1); }
     bool is_once_only = false;
 
@@ -503,12 +507,19 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
     }
      
     uint64_t inverted = inverts[i];
-    uint64_t pa = p - remainder;
-    uint64_t index = pa*inverted;
+    uint64_t pa = ps - remainder;
+    uint64_t index;
 #if USE_LIBDIVIDE
+    uint64_t index = (pa >> cnt)*inverted;
     index = libdivide_mod(index, p, riecoin_primeDividers[i]);
 #else
-    index %= p;
+    {
+      uint64_t r, nh, nl;
+      umul_ppmm(nh, nl, pa, inverted);
+      udiv_rnnd_preinv(r, nh, nl, ps, prime_mod_pre[i*7]);
+      // if ((r >> cnt) != ((pa >> cnt)*inverted) % p) {  printf("Remainder check fail\n"); exit(-1); }
+      index = r >> cnt;
+    }
 #endif
     uint64_t inverted2 = inverted << 1;
     if (inverted2 >= p) inverted2 -= p;

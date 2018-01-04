@@ -63,7 +63,8 @@ OBJS = \
 	xptMiner/xptClientPacketHandler.o \
 	xptMiner/xptPacketbuffer.o \
 	xptMiner/transaction.o \
-	xptMiner/riecoinMiner.o
+	xptMiner/riecoinMiner.o \
+	xptMiner/mod_1_4.o
 
 all: xptminer$(EXTENSION)
 
@@ -72,6 +73,11 @@ xptMiner/%.o: xptMiner/%.cpp
 
 xptMiner/%.o: xptMiner/%.c
 	$(CC) -c $(CFLAGS) $(INCLUDEPATHS) $< -o $@ 
+
+xptMiner/%.o: xptMiner/%.asm
+	m4 $< >$*.s
+	as $*.s -o $@
+	rm $*.s
 
 xptminer$(EXTENSION): $(OBJS:xptMiner/%=xptMiner/%) $(JHLIB:xptMiner/jhlib/%=xptMiner/jhlib/%)
 	$(CXX) $(CFLAGS) $(LIBPATHS) $(INCLUDEPATHS) $(STATIC) -o $@ $^ $(LIBS) -flto
