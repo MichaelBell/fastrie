@@ -183,7 +183,7 @@ void riecoin_init(uint64_t sieveMax, int numThreads, bool solo)
 	  exit(-1);
 	}
 
-	riecoin_primeTestSize -= 3;
+	riecoin_primeTestSize -= 7;
 }
 
 typedef uint32_t sixoff[6];
@@ -295,7 +295,7 @@ void maybe_put_offsets_in_segments(uint32_t *offsets, size_t n_offsets) {
   EnterCriticalSection(&bucket_lock);
   for (size_t i = 0; i < n_offsets; i++) {
     uint32_t index = offsets[i];
-    if (index == 0xffffffff) continue;
+    if (index >= max_increments) continue;
     uint32_t segment = index>>riecoin_sieveBits;
     uint32_t sc = segment_counts[segment]++;
     if (sc >= num_entries_per_segment) { 
@@ -332,9 +332,11 @@ void update_remainders_once_only(uint32_t start_i, uint32_t end_i)
   size_t n_offsets = 0;
 
   xmmreg a_p, a_index, a_mask, a_inverted, a_inverted2, a_inverted4;
+  xmmreg a_px, a_invertedx, a_inverted2x, a_inverted4x;
   xmmreg b_p, b_index, b_mask, b_inverted, b_inverted2, b_inverted4;
-  xmmreg maxincr;
-  maxincr.m128 = _mm_set1_epi32(max_increments);
+  xmmreg b_px, b_invertedx, b_inverted2x, b_inverted4x;
+  xmmreg topbits;
+  topbits.m128 = _mm_set1_epi32(0x80000000);
 
   for (auto i = start_i; i < end_i; i+=8) {
     if (n_offsets + 8 * 6 > OFFSET_STACK_SIZE)
@@ -344,62 +346,70 @@ void update_remainders_once_only(uint32_t start_i, uint32_t end_i)
     }
 
     for (uint32_t j = 0; j < 4; ++j) {
-      a_p.v[j] = riecoin_primeTestTable[i+j];
-        b_p.v[j] = riecoin_primeTestTable[i+j+4];
-      uint32_t a_remainder = mpz_tdiv_ui(tar, a_p.v[j]);
-        uint32_t b_remainder = mpz_tdiv_ui(tar, b_p.v[j]);
+      uint32_t a_prime = riecoin_primeTestTable[i+j];
+        uint32_t b_prime = riecoin_primeTestTable[i+j+4];
+      uint32_t a_remainder = mpz_tdiv_ui(tar, a_prime);
+        uint32_t b_remainder = mpz_tdiv_ui(tar, b_prime);
 
-      uint64_t a_pa = a_p.v[j] - a_remainder;
-        uint64_t b_pa = b_p.v[j] - b_remainder;
+      uint64_t a_pa = a_prime - a_remainder;
+        uint64_t b_pa = b_prime - b_remainder;
       uint64_t a_index64 = a_pa*inverts[i+j];
         uint64_t b_index64 = b_pa*inverts[i+j+4];
-      a_index64 %= a_p.v[j];
-        b_index64 %= b_p.v[j];
+      a_index64 %= a_prime;
+        b_index64 %= b_prime;
       a_index.v[j] = (uint32_t)a_index64;
         b_index.v[j] = (uint32_t)b_index64;
     }
 
     a_inverted.m128 = _mm_loadu_si128((__m128i*)&inverts[i]);
       b_inverted.m128 = _mm_loadu_si128((__m128i*)&inverts[i+4]);
+    a_p.m128 = _mm_loadu_si128((__m128i*)&riecoin_primeTestTable[i]);
+      b_p.m128 = _mm_loadu_si128((__m128i*)&riecoin_primeTestTable[i+4]);
+    a_invertedx.m128 = _mm_xor_si128(a_inverted.m128, topbits.m128);
+      b_invertedx.m128 = _mm_xor_si128(b_inverted.m128, topbits.m128);
+    a_px.m128 = _mm_xor_si128(a_p.m128, topbits.m128);
+      b_px.m128 = _mm_xor_si128(b_p.m128, topbits.m128);
 
     // inverted2 = (2*inverted)%p
-    a_inverted2.m128 = _mm_add_epi32(a_inverted.m128, a_inverted.m128);
-      b_inverted2.m128 = _mm_add_epi32(b_inverted.m128, b_inverted.m128);
-    a_mask.m128 = _mm_cmpeq_epi32(a_inverted.m128, _mm_max_epu32(a_inverted.m128, a_inverted2.m128)); // inverted >= inverted2 => carry
-      b_mask.m128 = _mm_cmpeq_epi32(b_inverted.m128, _mm_max_epu32(b_inverted.m128, b_inverted2.m128));
-    a_mask.m128 = _mm_or_si128(a_mask.m128, _mm_cmpeq_epi32(a_inverted2.m128, _mm_max_epu32(a_p.m128, a_inverted2.m128))); // inverted2 >= p
-      b_mask.m128 = _mm_or_si128(b_mask.m128, _mm_cmpeq_epi32(b_inverted2.m128, _mm_max_epu32(b_p.m128, b_inverted2.m128)));
-    a_mask.m128 = _mm_and_si128(a_mask.m128, a_p.m128);
-      b_mask.m128 = _mm_and_si128(b_mask.m128, b_p.m128);
-    a_inverted2.m128 = _mm_sub_epi32(a_inverted2.m128, a_mask.m128);
-      b_inverted2.m128 = _mm_sub_epi32(b_inverted2.m128, b_mask.m128);
+    a_inverted2x.m128 = _mm_add_epi32(a_inverted.m128, a_invertedx.m128);
+      b_inverted2x.m128 = _mm_add_epi32(b_inverted.m128, b_invertedx.m128);
+    a_mask.m128 = _mm_cmpgt_epi32(a_inverted2x.m128, a_invertedx.m128); // inverted >= inverted2 => carry
+      b_mask.m128 = _mm_cmpgt_epi32(b_inverted2x.m128, b_invertedx.m128);
+    a_mask.m128 = _mm_and_si128(a_mask.m128, _mm_cmpgt_epi32(a_px.m128, a_inverted2x.m128)); // inverted2 >= p
+      b_mask.m128 = _mm_and_si128(b_mask.m128, _mm_cmpgt_epi32(b_px.m128, b_inverted2x.m128));
+    a_mask.m128 = _mm_andnot_si128(a_mask.m128, a_p.m128);
+      b_mask.m128 = _mm_andnot_si128(b_mask.m128, b_p.m128);
+    a_inverted2x.m128 = _mm_sub_epi32(a_inverted2x.m128, a_mask.m128);
+      b_inverted2x.m128 = _mm_sub_epi32(b_inverted2x.m128, b_mask.m128);
+    a_inverted2.m128 = _mm_xor_si128(a_inverted2x.m128, topbits.m128);
+      b_inverted2.m128 = _mm_xor_si128(b_inverted2x.m128, topbits.m128);
 
     // inverted4 = (2*inverted2)%p
-    a_inverted4.m128 = _mm_add_epi32(a_inverted2.m128, a_inverted2.m128);
-      b_inverted4.m128 = _mm_add_epi32(b_inverted2.m128, b_inverted2.m128);
-    a_mask.m128 = _mm_cmpeq_epi32(a_inverted2.m128, _mm_max_epu32(a_inverted2.m128, a_inverted4.m128)); // inverted2 >= inverted4 => carry
-      b_mask.m128 = _mm_cmpeq_epi32(b_inverted2.m128, _mm_max_epu32(b_inverted2.m128, b_inverted4.m128));
-    a_mask.m128 = _mm_or_si128(a_mask.m128, _mm_cmpeq_epi32(a_inverted4.m128, _mm_max_epu32(a_p.m128, a_inverted4.m128))); // inverted4 >= p
-      b_mask.m128 = _mm_or_si128(b_mask.m128, _mm_cmpeq_epi32(b_inverted4.m128, _mm_max_epu32(b_p.m128, b_inverted4.m128)));
-    a_mask.m128 = _mm_and_si128(a_mask.m128, a_p.m128);
-      b_mask.m128 = _mm_and_si128(b_mask.m128, b_p.m128);
-    a_inverted4.m128 = _mm_sub_epi32(a_inverted4.m128, a_mask.m128);
-      b_inverted4.m128 = _mm_sub_epi32(b_inverted4.m128, b_mask.m128);
+    a_inverted4x.m128 = _mm_add_epi32(a_inverted2.m128, a_inverted2x.m128);
+      b_inverted4x.m128 = _mm_add_epi32(b_inverted2.m128, b_inverted2x.m128);
+    a_mask.m128 = _mm_cmpgt_epi32(a_inverted4x.m128, a_inverted2x.m128); // inverted2 >= inverted4 => carry
+      b_mask.m128 = _mm_cmpgt_epi32(b_inverted4x.m128, b_inverted2x.m128);
+    a_mask.m128 = _mm_and_si128(a_mask.m128, _mm_cmpgt_epi32(a_px.m128, a_inverted4x.m128)); // inverted4 >= p
+      b_mask.m128 = _mm_and_si128(b_mask.m128, _mm_cmpgt_epi32(b_px.m128, b_inverted4x.m128));
+    a_mask.m128 = _mm_andnot_si128(a_mask.m128, a_p.m128);
+      b_mask.m128 = _mm_andnot_si128(b_mask.m128, b_p.m128);
+    a_inverted4x.m128 = _mm_sub_epi32(a_inverted4x.m128, a_mask.m128);
+      b_inverted4x.m128 = _mm_sub_epi32(b_inverted4x.m128, b_mask.m128);
+    a_inverted4.m128 = _mm_xor_si128(a_inverted4x.m128, topbits.m128);
+      b_inverted4.m128 = _mm_xor_si128(b_inverted4x.m128, topbits.m128);
 
 #define STORE_INDEX() \
-    a_mask.m128 = _mm_cmpeq_epi32(a_index.m128, _mm_max_epu32(a_index.m128, maxincr.m128));  /* 0xffffffff if index >= max_increments  */ \
-      b_mask.m128 = _mm_cmpeq_epi32(b_index.m128, _mm_max_epu32(b_index.m128, maxincr.m128)); \
-    _mm_store_si128((__m128i*)&offset_stack[n_offsets], _mm_or_si128(a_mask.m128, a_index.m128)); \
-      _mm_store_si128((__m128i*)&offset_stack[n_offsets+4], _mm_or_si128(b_mask.m128, b_index.m128)); \
+    _mm_store_si128((__m128i*)&offset_stack[n_offsets], a_index.m128); \
+      _mm_store_si128((__m128i*)&offset_stack[n_offsets+4], b_index.m128); \
     n_offsets += 8;
     // if (index < max_increments) offset_stack[n_offsets++] = index;
     STORE_INDEX();
 
 #define SUB_MOD_P(a_inv, b_inv) \
-    a_mask.m128 = _mm_cmpeq_epi32(a_inv.m128, _mm_max_epu32(a_index.m128, a_inv.m128)); \
-      b_mask.m128 = _mm_cmpeq_epi32(b_inv.m128, _mm_max_epu32(b_index.m128, b_inv.m128)); \
-    a_index.m128 = _mm_add_epi32(a_index.m128, _mm_and_si128(a_mask.m128, a_p.m128)); \
-      b_index.m128 = _mm_add_epi32(b_index.m128, _mm_and_si128(b_mask.m128, b_p.m128)); \
+    a_mask.m128 = _mm_cmpeq_epi32(a_index.m128, _mm_max_epu32(a_index.m128, a_inv.m128)); \
+      b_mask.m128 = _mm_cmpeq_epi32(b_index.m128, _mm_max_epu32(b_index.m128, b_inv.m128)); \
+    a_index.m128 = _mm_add_epi32(a_index.m128, _mm_andnot_si128(a_mask.m128, a_p.m128)); \
+      b_index.m128 = _mm_add_epi32(b_index.m128, _mm_andnot_si128(b_mask.m128, b_p.m128)); \
     a_index.m128 = _mm_sub_epi32(a_index.m128, a_inv.m128); \
       b_index.m128 = _mm_sub_epi32(b_index.m128, b_inv.m128); \
     // if (index < inverted4) index += p;
@@ -433,11 +443,13 @@ void update_remainders(uint32_t start_i, uint32_t end_i) {
   }
   uint32_t *offset_stack = t_offset_stack;
 
+#if 1
   if (riecoin_primeTestTable[start_i] >= max_increments)
   {
     update_remainders_once_only(start_i, end_i);
     return;
   }
+#endif
 
   mpz_t tar;
   mpz_init_set(tar, z_verify_target);
@@ -710,7 +722,7 @@ void verify_thread() {
 
 void riecoin_process(minerRiecoinBlock_t* block)
 {
-#if DEDUB_TIMING
+#if DEBUG_TIMING
   modTime = sieveTime = checkTime = 0;
 #endif
 
@@ -827,7 +839,7 @@ void riecoin_process(minerRiecoinBlock_t* block)
 	//	  printf("Boss is working1\n");fflush(stdout);
 
 	uint32_t n_dense = 0;
-	uint64_t n_sparse = 0;
+	uint32_t n_sparse = 0;
 
 	/* Get some stuff done while the workers are working */
 	for (unsigned int i = 0; i < maxiter; i++) {
@@ -836,7 +848,7 @@ void riecoin_process(minerRiecoinBlock_t* block)
 
 
 	uint32_t incr = riecoin_primeTestSize/128;
-	uint32_t round = 4 - (incr & 0x3);
+	uint32_t round = 8 - (incr & 0x7);
         incr += round;
 
 	riecoinPrimeTestWork wi;
