@@ -99,11 +99,11 @@ PROLOGUE(rie_mod_1s_4p)
 
 	mov	%rdx, %r15
 	mov	%rcx, %r14
-	mov	16(%rcx), %r11		C B1modb
-	mov	24(%rcx), %rbx		C B2modb
-	mov	32(%rcx), %rbp		C B3modb
-	mov	40(%rcx), %r13		C B4modb
-	mov	48(%rcx), %r12		C B5modb
+	mov	12(%rcx), R32(%r11)		C B1modb
+	mov	16(%rcx), R32(%rbx)		C B2modb
+	mov	20(%rcx), R32(%rbp)		C B3modb
+	mov	24(%rcx), R32(%r13)		C B4modb
+	mov	28(%rcx), R32(%r12)		C B5modb
 	xor	R32(%r8), R32(%r8)
 	mov	R32(%rsi), R32(%rdx)
 	and	$3, R32(%rdx)
@@ -177,19 +177,14 @@ L(m0):	add	%rax, %r9
 L(m1):	sub	$4, %rsi
 	ja	L(top)
 
-L(end):	mov	8(%r14), R32(%rsi)
+L(end):	mov	8(%r14), R32(%rcx)
 	mov	%r8, %rax
 	mul	%r11
 	mov	%rax, %r8
 	add	%r9, %r8
-	adc	$0, %rdx
-	xor	R32(%rcx), R32(%rcx)
-	sub	R32(%rsi), R32(%rcx)
-	mov	%r8, %rdi
-	shr	R8(%rcx), %rdi
-	mov	R32(%rsi), R32(%rcx)
-	sal	R8(%rcx), %rdx
-	or	%rdx, %rdi
+	mov	$0, R32(%rdi)
+	adc     %rdx, %rdi
+	shld	R8(%rcx), %r8, %rdi
 	mov	%rdi, %rax
 	mulq	(%r14)
 	mov	%r15, %rbx
@@ -232,7 +227,7 @@ dnl	ASSERT(nz, `test $15, %rsp')
 	mov	%r12, %r8
 	mov	%rax, %r11
 	mov	%rax, (%rbx)		C store bi
-	mov	%rbp, 8(%rbx)		C store cnt
+	mov	R32(%rbp), 8(%rbx)	C store cnt
 	neg	%r8
 	mov	R32(%rbp), R32(%rcx)
 	mov	$1, R32(%rsi)
@@ -242,7 +237,7 @@ dnl	ASSERT(nz, `test $15, %rsp')
 
 	add	%rsi, %rdx
 	shr	R8(%rcx), %rsi
-	mov	%rsi, 16(%rbx)		C store B1modb
+	mov	R32(%rsi), 12(%rbx)	C store B1modb
 
 	not	%rdx
 	imul	%r12, %rdx
@@ -254,7 +249,7 @@ dnl	ASSERT(nz, `test $15, %rsp')
 
 	add	%rsi, %rdx
 	shr	R8(%rcx), %rsi
-	mov	%rsi, 24(%rbx)		C store B2modb
+	mov	R32(%rsi), 16(%rbx)	C store B2modb
 
 	not	%rdx
 	imul	%r12, %rdx
@@ -266,7 +261,7 @@ dnl	ASSERT(nz, `test $15, %rsp')
 
 	add	%rsi, %rdx
 	shr	R8(%rcx), %rsi
-	mov	%rsi, 32(%rbx)		C store B3modb
+	mov	R32(%rsi), 20(%rbx)	C store B3modb
 
 	not	%rdx
 	imul	%r12, %rdx
@@ -278,7 +273,7 @@ dnl	ASSERT(nz, `test $15, %rsp')
 
 	add	%rsi, %rdx
 	shr	R8(%rcx), %rsi
-	mov	%rsi, 40(%rbx)		C store B4modb
+	mov	R32(%rsi), 24(%rbx)	C store B4modb
 
 	not	%rdx
 	imul	%r12, %rdx
@@ -287,7 +282,7 @@ dnl	ASSERT(nz, `test $15, %rsp')
 	cmovnc	%rdx, %r12
 
 	shr	R8(%rcx), %r12
-	mov	%r12, 48(%rbx)		C store B5modb
+	mov	R32(%r12), 28(%rbx)	C store B5modb
 
 	pop	%r12
 	pop	%rbx
