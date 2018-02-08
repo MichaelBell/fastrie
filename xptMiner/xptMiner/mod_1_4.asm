@@ -90,14 +90,13 @@ C VIA nano	 4.75
 	.text
 	ALIGN(16)
 PROLOGUE(rie_mod_1s_4p)
-	push	%r15
 	push	%r14
 	push	%r13
 	push	%r12
 	push	%rbp
 	push	%rbx
 
-	mov	%rdx, %r15
+	push	%rdx
 	mov	%rcx, %r14
 	mov	12(%rcx), R32(%r11)		C B1modb
 	mov	16(%rcx), R32(%rbx)		C B2modb
@@ -187,7 +186,7 @@ L(end):	mov	8(%r14), R32(%rcx)
 	shld	R8(%rcx), %r8, %rdi
 	mov	%rdi, %rax
 	mulq	(%r14)
-	mov	%r15, %rbx
+	pop	%rbx
 	mov	%rax, %r9
 	sal	R8(%rcx), %r8
 	inc	%rdi
@@ -207,7 +206,6 @@ dnl	shr	R8(%rcx), %rax
 	pop	%r12
 	pop	%r13
 	pop	%r14
-	pop	%r15
 	ret
 
 	ALIGN(16)
