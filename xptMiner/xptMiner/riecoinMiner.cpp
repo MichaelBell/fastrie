@@ -678,7 +678,7 @@ void verify_thread() {
 	  }
 	  else if (!search_for_shares) break;
 	  int candidatesRemaining = 5-i;
-	  if ((nPrimes + candidatesRemaining) < 4) { continue; }
+	  if ((nPrimes + candidatesRemaining) < 4) { break; }
 	}
 	
 	/* The statistics are a little confusing because of the interaction
